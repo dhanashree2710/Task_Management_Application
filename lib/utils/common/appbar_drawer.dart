@@ -12,6 +12,7 @@ import 'package:task_management_application/modules/Employee/presentation/views/
 import 'package:task_management_application/modules/Employee/presentation/widgets/mange_employee_screen.dart';
 import 'package:task_management_application/modules/Interns/presentation/views/intern_dashboard.dart';
 import 'package:task_management_application/modules/Interns/presentation/widgets/mange_interns_screen.dart';
+import 'package:task_management_application/modules/Login/presentation/views/user_role_List.dart';
 import 'package:task_management_application/modules/Login/presentation/views/user_role_login.dart';
 import 'package:task_management_application/modules/Task/presentation/views/intern_task_list.dart';
 import 'package:task_management_application/modules/Task/presentation/views/manage_task.dart';
@@ -166,6 +167,13 @@ ListTile(
             currentUserRole: role,
           ),
         ),
+      _drawerItem(
+  context,
+  icon: Icons.manage_accounts,
+  label: "Manage User Role",
+  page: UserListScreen(),
+),
+
         _drawerItem(
           context,
           icon: Icons.task_rounded,
