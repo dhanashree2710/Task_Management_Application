@@ -1,6 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:task_management_application/firebase_options.dart';
+import 'package:task_management_application/modules/Admin/presentation/widgets/admin_register.dart';
+import 'package:task_management_application/modules/Task/presentation/views/employee_task_list.dart';
 import 'package:task_management_application/splash_screen.dart';
 
 
@@ -24,8 +26,9 @@ class MyApp extends StatelessWidget {
         
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.white),
       ),
-   //  home: AdminRegistration(currentUserId: '', currentUserRole: '',),
-    home: SplashScreen(),
+ // home: AdminRegistration(currentUserId: '', currentUserRole: '',),
+  // home: EmployeeTaskListScreen(currentUserId: '', currentUserRole: '',),
+  home: SplashScreen(),
     );
   }
 }

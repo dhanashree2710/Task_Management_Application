@@ -1716,44 +1716,66 @@ class _InternDashboardScreenState extends State<InternDashboardScreen>
                                   .map((val) =>
                                       DropdownMenuItem(value: val, child: Text("$val%")))
                                   .toList(),
-                              onChanged: (newValue) async {
+                            onChanged: (newValue) async {
                                 if (newValue != null) {
                                   final now = DateTime.now();
+
                                   Map<String, dynamic> updateData = {
-                                    'progress_percent': newValue
+                                    'progress_percent': newValue,
+                                    'updated_at': Timestamp.now(), // ✅ ADDED
                                   };
+
                                   DateTime? currentCompleted;
-                                  if (newValue == '100' && completedDate == null) {
-                                    updateData['completed_date'] = Timestamp.fromDate(now);
-                                    updateData['status'] = 'Completed';
+
+                                  if (newValue == '100' &&
+                                      completedDate == null) {
+                                    updateData.addAll({
+                                      'completed_date': Timestamp.fromDate(now),
+                                      'status': 'Completed',
+                                      'updated_at': Timestamp.now(), // ✅ ADDED
+                                    });
                                     currentCompleted = now;
                                   } else if (newValue != '100') {
-                                    // If moving away from 100, ensure status not incorrectly left as Completed
-                                    if ((task['status'] ?? '').toString().toLowerCase().contains('completed')) {
-                                      updateData['status'] = 'In Progress';
-                                      // remove completed_date? usually better to keep until user explicitly clears
+                                    if ((task['status'] ?? '')
+                                        .toString()
+                                        .toLowerCase()
+                                        .contains('completed')) {
+                                      updateData.addAll({
+                                        'status': 'In Progress',
+                                        'updated_at':
+                                            Timestamp.now(), // ✅ ADDED
+                                      });
                                     }
                                   }
+
                                   await FirebaseFirestore.instance
                                       .collection('tasks')
                                       .doc(task['task_id'])
                                       .update(updateData);
 
-                                  final taskSnapshot = await FirebaseFirestore.instance
-                                      .collection('tasks')
-                                      .doc(task['task_id'])
-                                      .get();
-                                  final taskData = taskSnapshot.data() as Map<String, dynamic>?;
+                                  final taskSnapshot =
+                                      await FirebaseFirestore.instance
+                                          .collection('tasks')
+                                          .doc(task['task_id'])
+                                          .get();
+
+                                  final taskData =
+                                      taskSnapshot.data()
+                                          as Map<String, dynamic>?;
+
                                   DateTime? currentStart =
-                                      (taskData?['start_date'] as Timestamp?)?.toDate();
+                                      (taskData?['start_date'] as Timestamp?)
+                                          ?.toDate();
 
                                   await _storeReportData(
                                     userId: widget.currentUserId,
                                     progressPercent: newValue,
                                     taskId: task['task_id'],
                                     startDate: currentStart,
-                                    completedDate: currentCompleted ?? completedDate,
+                                    completedDate:
+                                        currentCompleted ?? completedDate,
                                   );
+
                                   _refreshData();
                                 }
                               },
@@ -1761,7 +1783,7 @@ class _InternDashboardScreenState extends State<InternDashboardScreen>
                           ),
                         ),
                       ],
-                    )
+                    ),
                   ],
                 ],
               ),

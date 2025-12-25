@@ -320,7 +320,7 @@ class _TaskAllocationScreenState extends State<TaskAllocationScreen> {
   @override
   Widget build(BuildContext context) {
     final assignByList = [..._admins, ..._employees];
-    final assignToList = [..._employees, ..._interns];
+   final assignToList = [..._admins, ..._employees, ..._interns];
 
     return Scaffold(
       appBar: AppBar(
