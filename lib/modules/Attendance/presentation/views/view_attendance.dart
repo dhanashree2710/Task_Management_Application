@@ -1,4 +1,7 @@
 import 'dart:ui';
+import 'package:csv/csv.dart';
+import 'dart:convert';
+import 'dart:html' as html;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +28,9 @@ class _AttendanceDashboardAllScreenState
 
   List<Map<String, dynamic>> employees = [];
   Map<String, Map<String, String>> attendanceTable = {};
+
+  String? editingEmpId;
+  int? editingDay;
 
   bool isLoading = false;
 
@@ -79,178 +85,199 @@ class _AttendanceDashboardAllScreenState
   }
 
   // ---------------- GENERATE SHEET ----------------
- Future<void> generateAttendanceSheet() async {
-  attendanceTable.clear();
+  Future<void> generateAttendanceSheet() async {
+    attendanceTable.clear();
 
-  presentCount = 0;
-  absentCount = 0;
-  holidayCount = 0;
-  leaveCount = 0;
+    presentCount = 0;
+    absentCount = 0;
+    holidayCount = 0;
+    leaveCount = 0;
 
-  final start = DateTime(selectedYear, selectedMonth, 1);
-  final end = DateTime(selectedYear, selectedMonth + 1, 0);
+    final start = DateTime(selectedYear, selectedMonth, 1);
+    final end = DateTime(selectedYear, selectedMonth + 1, 0);
 
-  for (var emp in employees) {
-    String empId = emp['id'];
-    Map<String, String> row = {};
+    for (var emp in employees) {
+      String empId = emp['id'];
+      Map<String, String> row = {};
 
-    // Attendance from Firestore
-    final recSnap = await _firestore
-        .collection('attendance')
-        .doc(empId)
-        .collection('records')
-        .get();
+      // Attendance from Firestore
+      final recSnap =
+          await _firestore
+              .collection('attendance')
+              .doc(empId)
+              .collection('records')
+              .get();
 
-    Map<String, String> attendanceDates = {
-      for (var d in recSnap.docs)
-        (d.data()['date'] ?? d.id).toString():
-            (d.data()['status'] ?? 'Present'),
-    };
+      Map<String, String> attendanceDates = {
+        for (var d in recSnap.docs)
+          (d.data()['date'] ?? d.id).toString():
+              (d.data()['status'] ?? 'Present'),
+      };
 
-    // Holidays
-    final holSnap = await _firestore.collection('holidays').get();
-    final holidayDates = holSnap.docs.map((d) => d.id).toSet();
+      // Holidays
+      final holSnap = await _firestore.collection('holidays').get();
+      final holidayDates = holSnap.docs.map((d) => d.id).toSet();
 
-    // Leave
-    final leaveSnap = await _firestore
-        .collection('leave_applications')
-        .doc(empId)
-        .collection('applications')
-        .where('status', isEqualTo: 'approved')
-        .get();
+      // Leave
+      final leaveSnap =
+          await _firestore
+              .collection('leave_applications')
+              .doc(empId)
+              .collection('applications')
+              .where('status', isEqualTo: 'approved')
+              .get();
 
-    Set<String> leaveDates = {};
-    for (var d in leaveSnap.docs) {
-      final startDate = DateTime.parse(d['startDate']);
-      final endDate = DateTime.parse(d['endDate']);
+      Set<String> leaveDates = {};
+      for (var d in leaveSnap.docs) {
+        final startDate = DateTime.parse(d['startDate']);
+        final endDate = DateTime.parse(d['endDate']);
 
-      DateTime temp = startDate;
-      while (!temp.isAfter(endDate)) {
-        leaveDates.add(DateFormat('yyyy-MM-dd').format(temp));
-        temp = temp.add(const Duration(days: 1));
-      }
-    }
-
-    DateTime day = start;
-    while (!day.isAfter(end)) {
-      String key = DateFormat('yyyy-MM-dd').format(day);
-      String value = "A";
-
-      if (attendanceDates.containsKey(key)) {
-        value = "P";
-        presentCount++;
-      } else if (leaveDates.contains(key)) {
-        value = "L";
-        leaveCount++;
-      } else if (holidayDates.contains(key)) {
-        value = "H";
-        holidayCount++;
-      } else {
-        value = "A";
-        absentCount++;
+        DateTime temp = startDate;
+        while (!temp.isAfter(endDate)) {
+          leaveDates.add(DateFormat('yyyy-MM-dd').format(temp));
+          temp = temp.add(const Duration(days: 1));
+        }
       }
 
-      row[day.day.toString()] = value;
-      day = day.add(const Duration(days: 1));
-    }
+      DateTime day = start;
+      while (!day.isAfter(end)) {
+        String key = DateFormat('yyyy-MM-dd').format(day);
+        String value = "A";
 
-    attendanceTable[empId] = row;
+        if (attendanceDates.containsKey(key)) {
+          value = "P";
+          presentCount++;
+        } else if (leaveDates.contains(key)) {
+          value = "L";
+          leaveCount++;
+        } else if (holidayDates.contains(key)) {
+          value = "H";
+          holidayCount++;
+        } else {
+          value = "A";
+          absentCount++;
+        }
+
+        row[day.day.toString()] = value;
+        day = day.add(const Duration(days: 1));
+      }
+
+      attendanceTable[empId] = row;
+    }
   }
-}
 
-  // ---------------- EDIT POPUP ----------------
-  void _showFullRowEditor(String empId, String empName) {
+  String? resolveAttendanceValue({
+    required DateTime cellDate,
+    required Map<String, String> data,
+    required int day,
+  }) {
+    final key = day.toString();
+    final now = DateTime.now();
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final cellOnlyDate = DateTime(cellDate.year, cellDate.month, cellDate.day);
+
+    final storedValue = data[key];
+
+    // 🔹 FUTURE → always "-"
+    if (cellOnlyDate.isAfter(todayDate)) {
+      return "-";
+    }
+
+    // 🔹 TODAY → "-" until 12 PM, then "A"
+    if (cellOnlyDate.isAtSameMomentAs(todayDate)) {
+      final noon = DateTime(todayDate.year, todayDate.month, todayDate.day, 12);
+
+      if (now.isAfter(noon)) {
+        return storedValue == "P" || storedValue == "L" || storedValue == "H"
+            ? storedValue
+            : "A";
+      }
+      return "-";
+    }
+
+    // 🔹 PAST
+    if (storedValue != null) {
+      return storedValue;
+    }
+
+    return "A";
+  }
+
+  void exportAttendanceCSV() {
     final daysInMonth = DateTime(selectedYear, selectedMonth + 1, 0).day;
-    Map<String, String> row = attendanceTable[empId] ?? {};
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text("Edit Attendance – $empName"),
-              content: SizedBox(
-                width: 550,
-                height: 500,
-                child: Scrollbar(
-                  child: ListView.builder(
-                    itemCount: daysInMonth,
-                    itemBuilder: (context, index) {
-                      final day = index + 1;
-                      final key =
-                          "${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
-                      String current = row["$day"] ?? "A";
+    List<List<String>> rows = [];
 
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text("Day $day"),
-                          DropdownButton<String>(
-                            value: current,
-                            items: const [
-                              DropdownMenuItem(
-                                value: "P",
-                                child: Text("Present"),
-                              ),
-                              DropdownMenuItem(
-                                value: "A",
-                                child: Text("Absent"),
-                              ),
-                              DropdownMenuItem(
-                                value: "L",
-                                child: Text("Leave"),
-                              ),
-                              DropdownMenuItem(
-                                value: "H",
-                                child: Text("Holiday"),
-                              ),
-                            ],
-                            onChanged: (v) {
-                              row["$day"] = v!;
-                              setState(() {});
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  child: const Text("Cancel"),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                ElevatedButton(
-                  child: const Text("Save"),
-                  onPressed: () async {
-                    for (int d = 1; d <= daysInMonth; d++) {
-                      final dateStr =
-                          "${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
-                      final status = row["$d"] ?? "A";
+    // Header
+    List<String> header = ["Employee"];
+    for (int d = 1; d <= daysInMonth; d++) {
+      header.add(d.toString());
+    }
+    header.addAll(["P", "A", "L", "H"]);
+    rows.add(header);
 
-                      await _firestore
-                          .collection("attendance")
-                          .doc(empId)
-                          .collection("records")
-                          .doc(dateStr)
-                          .set({
-                            "date": dateStr,
-                            "status": status,
-                          }, SetOptions(merge: true));
-                    }
+    // Data
+    for (var emp in employees) {
+      final data = attendanceTable[emp['id']] ?? {};
+      int p = 0, a = 0, l = 0, h = 0;
 
-                    Navigator.pop(context);
-                    fetchData();
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+      List<String> row = [emp['name']];
+
+      for (int d = 1; d <= daysInMonth; d++) {
+        final cellDate = DateTime(selectedYear, selectedMonth, d);
+
+        final value =
+            resolveAttendanceValue(cellDate: cellDate, data: data, day: d) ??
+            "-";
+
+        row.add(value);
+
+        if (value == "P") p++;
+        if (value == "A") a++;
+        if (value == "L") l++;
+        if (value == "H") h++;
+      }
+
+      row.addAll([p.toString(), a.toString(), l.toString(), h.toString()]);
+      rows.add(row);
+    }
+
+    final csvData = const ListToCsvConverter().convert(rows);
+
+    final bytes = utf8.encode(csvData);
+    final blob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+
+    html.AnchorElement(href: url)
+      ..setAttribute(
+        "download",
+        "attendance_${selectedMonth}_$selectedYear.csv",
+      )
+      ..click();
+
+    html.Url.revokeObjectUrl(url);
+  }
+
+  Future<void> updateSingleDay({
+    required String empId,
+    required int day,
+    required String status,
+  }) async {
+    final dateStr =
+        "${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
+
+    await _firestore
+        .collection("attendance")
+        .doc(empId)
+        .collection("records")
+        .doc(dateStr)
+        .set({"date": dateStr, "status": status}, SetOptions(merge: true));
+
+    setState(() {
+      attendanceTable[empId]?[day.toString()] = status;
+      editingEmpId = null;
+      editingDay = null;
+    });
   }
 
   // ---------------- ADD HOLIDAY POPUP ----------------
@@ -340,14 +367,11 @@ class _AttendanceDashboardAllScreenState
 
     return Scaffold(
       appBar: AppBar(
-         title: const Text(
-    "Employee Attendance",
-    style: TextStyle(
-      color: Colors.white,
-      fontWeight: FontWeight.w600,
-    ),
-  ),
-  centerTitle: true,
+        title: const Text(
+          "Employee Attendance",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+        centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
           onPressed: () => Navigator.pop(context),
@@ -441,7 +465,7 @@ class _AttendanceDashboardAllScreenState
                         tooltip: "Refresh",
                       ),
                       // Add holiday icon
-                      if (_isAdmin())
+                      if (_isAdmin()) ...[
                         IconButton(
                           onPressed: _showAddHolidayDialog,
                           icon: const Icon(
@@ -450,6 +474,13 @@ class _AttendanceDashboardAllScreenState
                           ),
                           tooltip: "Add Holiday",
                         ),
+
+                        IconButton(
+                          onPressed: exportAttendanceCSV,
+                          icon: const Icon(Icons.download, color: Colors.green),
+                          tooltip: "Export Attendance",
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -475,7 +506,7 @@ class _AttendanceDashboardAllScreenState
                             controller: _verticalController,
                             scrollDirection: Axis.vertical,
                             child: DataTable(
-                              headingRowColor: MaterialStateProperty.all(
+                              headingRowColor: WidgetStateProperty.all(
                                 Colors.grey.shade200,
                               ),
                               columns: [
@@ -488,8 +519,6 @@ class _AttendanceDashboardAllScreenState
                                 const DataColumn(label: Text("A")),
                                 const DataColumn(label: Text("L")),
                                 const DataColumn(label: Text("H")),
-                                if (_isAdmin())
-                                  const DataColumn(label: Text("Edit")),
                               ],
                               rows:
                                   employees.map((emp) {
@@ -507,52 +536,96 @@ class _AttendanceDashboardAllScreenState
                                     return DataRow(
                                       cells: [
                                         DataCell(Text(emp['name'])),
+
+                                        // -------- INLINE EDIT CELLS --------
                                         ...List.generate(daysInMonth, (d) {
-                                          String value =
-                                              data["${d + 1}"] ?? "-";
+                                          final day = d + 1;
+                                          final cellDate = DateTime(
+                                            selectedYear,
+                                            selectedMonth,
+                                            day,
+                                          );
+
+                                          final value = resolveAttendanceValue(
+                                            cellDate: cellDate,
+                                            data: data,
+                                            day: day,
+                                          );
+
+                                          final isEditing =
+                                              _isAdmin() &&
+                                              editingEmpId == emp['id'] &&
+                                              editingDay == day;
+
                                           return DataCell(
-                                            Text(
-                                              value,
-                                              style: TextStyle(
-                                                color:
-                                                    value == "P"
-                                                        ? Colors.green
-                                                        : value == "A"
-                                                        ? Colors.red
-                                                        : value == "L"
-                                                        ? Colors.orange
-                                                        : value == "H"
-                                                        ? Colors.blue
-                                                        : Colors.grey,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            onTap:
-                                                _isAdmin()
-                                                    ? () => _showFullRowEditor(
-                                                      emp['emp_id'], // If you manually stored emp_id
-                                                      (d + 1) as String,
-                                                    )
-                                                    : null,
+                                            isEditing
+                                                ? DropdownButton<String>(
+                                                  value: value,
+                                                  underline: const SizedBox(),
+                                                  items: const [
+                                                    DropdownMenuItem(
+                                                      value: "P",
+                                                      child: Text("P"),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: "A",
+                                                      child: Text("A"),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: "L",
+                                                      child: Text("L"),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: "H",
+                                                      child: Text("H"),
+                                                    ),
+                                                  ],
+                                                  onChanged: (v) {
+                                                    if (v == null) return;
+                                                    updateSingleDay(
+                                                      empId: emp['id'],
+                                                      day: day,
+                                                      status: v,
+                                                    );
+                                                  },
+                                                )
+                                                : InkWell(
+                                                  onTap:
+                                                      _isAdmin()
+                                                          ? () {
+                                                            setState(() {
+                                                              editingEmpId =
+                                                                  emp['id'];
+                                                              editingDay = day;
+                                                            });
+                                                          }
+                                                          : null,
+                                                  child: Text(
+                                                    value!,
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color:
+                                                          value == "P"
+                                                              ? Colors.green
+                                                              : value == "A"
+                                                              ? Colors.red
+                                                              : value == "L"
+                                                              ? Colors.orange
+                                                              : value == "H"
+                                                              ? Colors.blue
+                                                              : Colors.grey,
+                                                    ),
+                                                  ),
+                                                ),
                                           );
                                         }),
+
+                                        // -------- TOTALS --------
                                         DataCell(Text("$p")),
                                         DataCell(Text("$a")),
                                         DataCell(Text("$l")),
                                         DataCell(Text("$h")),
-                                        if (_isAdmin())
-                                          DataCell(
-                                            IconButton(
-                                              icon: const Icon(Icons.edit,
-                                              color: Colors.blue,),
-                                              onPressed: () {
-                                                _showFullRowEditor(
-                                                  emp['id'],
-                                                  emp['name'],
-                                                );
-                                              },
-                                            ),
-                                          ),
                                       ],
                                     );
                                   }).toList(),

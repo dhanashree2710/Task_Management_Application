@@ -1,4 +1,8 @@
 import 'dart:ui';
+import 'package:csv/csv.dart';
+import 'dart:convert';
+import 'dart:html' as html;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -33,9 +37,14 @@ class _InternAttendanceDashboardScreenState
   int selectedMonth = DateTime.now().month;
   int selectedYear = DateTime.now().year;
 
+  String? editingEmpId;
+  int? editingDay;
+
   late final List<int> years;
-  final List<String> monthNames =
-      List.generate(12, (i) => DateFormat.MMMM().format(DateTime(0, i + 1)));
+  final List<String> monthNames = List.generate(
+    12,
+    (i) => DateFormat.MMMM().format(DateTime(0, i + 1)),
+  );
 
   int presentCount = 0;
   int absentCount = 0;
@@ -92,11 +101,12 @@ class _InternAttendanceDashboardScreenState
       Map<String, String> row = {};
 
       // Attendance from Firestore
-      final recSnap = await _firestore
-          .collection('attendance')
-          .doc(internId)
-          .collection('records')
-          .get();
+      final recSnap =
+          await _firestore
+              .collection('attendance')
+              .doc(internId)
+              .collection('records')
+              .get();
 
       Map<String, String> attendanceDates = {
         for (var d in recSnap.docs)
@@ -109,12 +119,13 @@ class _InternAttendanceDashboardScreenState
       final holidayDates = holSnap.docs.map((d) => d.id).toSet();
 
       // Leave
-      final leaveSnap = await _firestore
-          .collection('intern_leave_applications')
-          .doc(internId)
-          .collection('applications')
-          .where('status', isEqualTo: 'approved')
-          .get();
+      final leaveSnap =
+          await _firestore
+              .collection('intern_leave_applications')
+              .doc(internId)
+              .collection('applications')
+              .where('status', isEqualTo: 'approved')
+              .get();
 
       Set<String> leaveDates = {};
       for (var d in leaveSnap.docs) {
@@ -155,99 +166,118 @@ class _InternAttendanceDashboardScreenState
     }
   }
 
-  // ---------------- EDIT POPUP ----------------
-  void _showFullRowEditor(String internId, String internName) {
+  String? resolveAttendanceValue({
+    required DateTime cellDate,
+    required Map<String, String> data,
+    required int day,
+  }) {
+    final key = day.toString();
+    final now = DateTime.now();
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final cellOnlyDate = DateTime(cellDate.year, cellDate.month, cellDate.day);
+
+    final storedValue = data[key];
+
+    // 🔹 FUTURE → always "-"
+    if (cellOnlyDate.isAfter(todayDate)) {
+      return "-";
+    }
+
+    // 🔹 TODAY → "-" until 12 PM, then "A"
+    if (cellOnlyDate.isAtSameMomentAs(todayDate)) {
+      final noon = DateTime(todayDate.year, todayDate.month, todayDate.day, 12);
+
+      if (now.isAfter(noon)) {
+        return storedValue == "P" || storedValue == "L" || storedValue == "H"
+            ? storedValue
+            : "A";
+      }
+      return "-";
+    }
+
+    // 🔹 PAST
+    if (storedValue != null) {
+      return storedValue;
+    }
+
+    return "A";
+  }
+
+  void exportAttendanceCSV() {
     final daysInMonth = DateTime(selectedYear, selectedMonth + 1, 0).day;
-    Map<String, String> row = attendanceTable[internId] ?? {};
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text("Edit Attendance – $internName"),
-              content: SizedBox(
-                width: 550,
-                height: 500,
-                child: Scrollbar(
-                  child: ListView.builder(
-                    itemCount: daysInMonth,
-                    itemBuilder: (context, index) {
-                      final day = index + 1;
-                      final key =
-                          "${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
-                      String current = row["$day"] ?? "A";
+    List<List<String>> rows = [];
 
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text("Day $day"),
-                          DropdownButton<String>(
-                            value: current,
-                            items: const [
-                              DropdownMenuItem(
-                                value: "P",
-                                child: Text("Present"),
-                              ),
-                              DropdownMenuItem(
-                                value: "A",
-                                child: Text("Absent"),
-                              ),
-                              DropdownMenuItem(
-                                value: "L",
-                                child: Text("Leave"),
-                              ),
-                              DropdownMenuItem(
-                                value: "H",
-                                child: Text("Holiday"),
-                              ),
-                            ],
-                            onChanged: (v) {
-                              row["$day"] = v!;
-                              setState(() {});
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  child: const Text("Cancel"),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                ElevatedButton(
-                  child: const Text("Save"),
-                  onPressed: () async {
-                    for (int d = 1; d <= daysInMonth; d++) {
-                      final dateStr =
-                          "${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
-                      final status = row["$d"] ?? "A";
+    // Header
+    List<String> header = ["Intern"];
+    for (int d = 1; d <= daysInMonth; d++) {
+      header.add(d.toString());
+    }
+    header.addAll(["P", "A", "L", "H"]);
+    rows.add(header);
 
-                      await _firestore
-                          .collection("intern_attendance")
-                          .doc(internId)
-                          .collection("records")
-                          .doc(dateStr)
-                          .set({
-                        "date": dateStr,
-                        "status": status,
-                      }, SetOptions(merge: true));
-                    }
+    // Data
+    for (var emp in interns) {
+      final data = attendanceTable[emp['id']] ?? {};
+      int p = 0, a = 0, l = 0, h = 0;
 
-                    Navigator.pop(context);
-                    fetchData();
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+      List<String> row = [emp['name']];
+
+      for (int d = 1; d <= daysInMonth; d++) {
+        final cellDate = DateTime(selectedYear, selectedMonth, d);
+
+        final value =
+            resolveAttendanceValue(cellDate: cellDate, data: data, day: d) ??
+            "-";
+
+        row.add(value);
+
+        if (value == "P") p++;
+        if (value == "A") a++;
+        if (value == "L") l++;
+        if (value == "H") h++;
+      }
+
+      row.addAll([p.toString(), a.toString(), l.toString(), h.toString()]);
+      rows.add(row);
+    }
+
+    final csvData = const ListToCsvConverter().convert(rows);
+
+    final bytes = utf8.encode(csvData);
+    final blob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+
+    html.AnchorElement(href: url)
+      ..setAttribute(
+        "download",
+        "attendance_${selectedMonth}_$selectedYear.csv",
+      )
+      ..click();
+
+    html.Url.revokeObjectUrl(url);
+  }
+
+  Future<void> updateSingleDay({
+    required String empId,
+    required int day,
+    required String status,
+  }) async {
+    final dateStr =
+        "${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
+
+    await _firestore
+        .collection("attendance")
+        .doc(empId)
+        .collection("records")
+        .doc(dateStr)
+        .set({"date": dateStr, "status": status}, SetOptions(merge: true));
+
+    setState(() {
+      attendanceTable[empId]?[day.toString()] = status;
+      editingEmpId = null;
+      editingDay = null;
+    });
   }
 
   // ---------------- ADD HOLIDAY POPUP ----------------
@@ -284,8 +314,9 @@ class _InternAttendanceDashboardScreenState
 
                       if (picked != null) {
                         selectedDate = picked;
-                        dateCtrl.text =
-                            DateFormat('yyyy-MM-dd').format(selectedDate!);
+                        dateCtrl.text = DateFormat(
+                          'yyyy-MM-dd',
+                        ).format(selectedDate!);
                         setState(() {});
                       }
                     },
@@ -308,10 +339,13 @@ class _InternAttendanceDashboardScreenState
                   onPressed: () async {
                     if (dateCtrl.text.isEmpty) return;
 
-                    await _firestore.collection("holidays").doc(dateCtrl.text).set({
-                      "name": nameCtrl.text.trim(),
-                      "created_at": DateTime.now().toIso8601String(),
-                    });
+                    await _firestore
+                        .collection("holidays")
+                        .doc(dateCtrl.text)
+                        .set({
+                          "name": nameCtrl.text.trim(),
+                          "created_at": DateTime.now().toIso8601String(),
+                        });
 
                     Navigator.pop(context);
                     fetchData();
@@ -333,14 +367,11 @@ class _InternAttendanceDashboardScreenState
 
     return Scaffold(
       appBar: AppBar(
-         title: const Text(
-    "Intern Attendance",
-    style: TextStyle(
-      color: Colors.white,
-      fontWeight: FontWeight.w600,
-    ),
-  ),
-  centerTitle: true,
+        title: const Text(
+          "Intern Attendance",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+        centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
           onPressed: () => Navigator.pop(context),
@@ -354,8 +385,6 @@ class _InternAttendanceDashboardScreenState
             ),
           ),
         ],
-        
-
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -367,181 +396,247 @@ class _InternAttendanceDashboardScreenState
         ),
       ),
 
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
+      body:
+          isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                children: [
+                  // Summary Cards
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      children: [
+                        summaryCard("Present", presentCount, Colors.green),
+                        summaryCard("Absent", absentCount, Colors.red),
+                        summaryCard("Holiday", holidayCount, Colors.blue),
+                        summaryCard("Leave", leaveCount, Colors.orange),
+                      ],
+                    ),
+                  ),
 
-                // Summary Cards
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Row(
+                  // Filters Row
+                  Row(
                     children: [
-                      summaryCard("Present", presentCount, Colors.green),
-                      summaryCard("Absent", absentCount, Colors.red),
-                      summaryCard("Holiday", holidayCount, Colors.blue),
-                      summaryCard("Leave", leaveCount, Colors.orange),
+                      const SizedBox(width: 12),
+                      // Month dropdown
+                      DropdownButton<int>(
+                        value: selectedMonth,
+                        items: List.generate(
+                          12,
+                          (i) => DropdownMenuItem(
+                            value: i + 1,
+                            child: Text(monthNames[i]),
+                          ),
+                        ),
+                        onChanged:
+                            (v) => setState(
+                              () => selectedMonth = v ?? selectedMonth,
+                            ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Year dropdown
+                      DropdownButton<int>(
+                        value: selectedYear,
+                        items:
+                            years
+                                .map(
+                                  (y) => DropdownMenuItem(
+                                    value: y,
+                                    child: Text('$y'),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged:
+                            (v) => setState(
+                              () => selectedYear = v ?? selectedYear,
+                            ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Apply button
+                      ElevatedButton(
+                        onPressed: fetchData,
+                        child: const Text("Apply"),
+                      ),
+                      const SizedBox(width: 12),
+                      // Refresh icon
+                      IconButton(
+                        onPressed: fetchData,
+                        icon: const Icon(Icons.refresh, color: Colors.blue),
+                        tooltip: "Refresh",
+                      ),
+                      // Add holiday icon
+                      ...[
+                        IconButton(
+                          onPressed: _showAddHolidayDialog,
+                          icon: const Icon(
+                            Icons.beach_access,
+                            color: Colors.orange,
+                          ),
+                          tooltip: "Add Holiday",
+                        ),
+
+                        IconButton(
+                          onPressed: exportAttendanceCSV,
+                          icon: const Icon(Icons.download, color: Colors.green),
+                          tooltip: "Export Attendance",
+                        ),
+                      ],
                     ],
                   ),
-                ),
+                  const SizedBox(height: 10),
 
-                // Filters Row
-                Row(
-                  children: [
-                    const SizedBox(width: 12),
-                    DropdownButton<int>(
-                      value: selectedMonth,
-                      items: List.generate(
-                        12,
-                        (i) => DropdownMenuItem(
-                          value: i + 1,
-                          child: Text(monthNames[i]),
-                        ),
+                  // ---------------- TABLE ----------------
+                  Expanded(
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(context).copyWith(
+                        dragDevices: {
+                          PointerDeviceKind.mouse,
+                          PointerDeviceKind.trackpad,
+                          PointerDeviceKind.touch,
+                        },
+                        scrollbars: true,
                       ),
-                      onChanged: (v) =>
-                          setState(() => selectedMonth = v ?? selectedMonth),
-                    ),
-                    const SizedBox(width: 12),
-                    DropdownButton<int>(
-                      value: selectedYear,
-                      items: years
-                          .map((y) => DropdownMenuItem(
-                                value: y,
-                                child: Text('$y'),
-                              ))
-                          .toList(),
-                      onChanged: (v) =>
-                          setState(() => selectedYear = v ?? selectedYear),
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton(
-                      onPressed: fetchData,
-                      child: const Text("Apply"),
-                    ),
-                    const SizedBox(width: 12),
-                    IconButton(
-                      onPressed: fetchData,
-                      icon: const Icon(Icons.refresh, color: Colors.blue),
-                    ),
-                    if (_isAdmin())
-                      IconButton(
-                        onPressed: _showAddHolidayDialog,
-                        icon: const Icon(Icons.beach_access,
-                            color: Colors.orange),
-                        tooltip: "Add Holiday",
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 10),
-
-                // ---------------- TABLE ----------------
-                Expanded(
-                  child: ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(context).copyWith(
-                      dragDevices: {
-                        PointerDeviceKind.mouse,
-                        PointerDeviceKind.trackpad,
-                        PointerDeviceKind.touch,
-                      },
-                      scrollbars: true,
-                    ),
-                    child: Scrollbar(
-                      controller: _verticalController,
-                      thumbVisibility: true,
-                      child: SingleChildScrollView(
-                        controller: _horizontalController,
-                        scrollDirection: Axis.horizontal,
+                      child: Scrollbar(
+                        controller: _verticalController,
+                        thumbVisibility: true,
                         child: SingleChildScrollView(
-                          controller: _verticalController,
-                          scrollDirection: Axis.vertical,
-                          child: DataTable(
-                            headingRowColor: MaterialStateProperty.all(
-                              Colors.grey.shade200,
-                            ),
-                            columns: [
-                              const DataColumn(label: Text("Intern")),
-                              ...List.generate(
-                                daysInMonth,
-                                (d) => DataColumn(label: Text("${d + 1}")),
+                          controller: _horizontalController,
+                          scrollDirection: Axis.horizontal,
+                          child: SingleChildScrollView(
+                            controller: _verticalController,
+                            scrollDirection: Axis.vertical,
+                            child: DataTable(
+                              headingRowColor: WidgetStateProperty.all(
+                                Colors.grey.shade200,
                               ),
-                              const DataColumn(label: Text("P")),
-                              const DataColumn(label: Text("A")),
-                              const DataColumn(label: Text("L")),
-                              const DataColumn(label: Text("H")),
-                              if (_isAdmin())
-                                const DataColumn(label: Text("Edit")),
-                            ],
-                            rows: interns.map((intern) {
-                              final data =
-                                  attendanceTable[intern['id']] ?? {};
+                              columns: [
+                                const DataColumn(label: Text("Employee")),
+                                ...List.generate(
+                                  daysInMonth,
+                                  (d) => DataColumn(label: Text("${d + 1}")),
+                                ),
+                                const DataColumn(label: Text("P")),
+                                const DataColumn(label: Text("A")),
+                                const DataColumn(label: Text("L")),
+                                const DataColumn(label: Text("H")),
+                              ],
+                              rows:
+                                  interns.map((emp) {
+                                    final data =
+                                        attendanceTable[emp['id']] ?? {};
 
-                              int p = 0, a = 0, l = 0, h = 0;
-                              for (var v in data.values) {
-                                if (v == "P") p++;
-                                if (v == "A") a++;
-                                if (v == "L") l++;
-                                if (v == "H") h++;
-                              }
+                                    int p = 0, a = 0, l = 0, h = 0;
+                                    for (var v in data.values) {
+                                      if (v == "P") p++;
+                                      if (v == "A") a++;
+                                      if (v == "L") l++;
+                                      if (v == "H") h++;
+                                    }
 
-                              return DataRow(
-                                cells: [
-                                  DataCell(Text(intern['name'])),
-                                  ...List.generate(daysInMonth, (d) {
-                                    String value =
-                                        data["${d + 1}"] ?? "-";
-                                    return DataCell(
-                                      Text(
-                                        value,
-                                        style: TextStyle(
-                                          color: value == "P"
-                                              ? Colors.green
-                                              : value == "A"
-                                                  ? Colors.red
-                                                  : value == "L"
-                                                      ? Colors.orange
-                                                      : value == "H"
-                                                          ? Colors.blue
-                                                          : Colors.grey,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      onTap: _isAdmin()
-                                          ? () => _showFullRowEditor(
-                                                intern['id'],
-                                                intern['name'],
-                                              )
-                                          : null,
-                                    );
-                                  }),
-                                  DataCell(Text("$p")),
-                                  DataCell(Text("$a")),
-                                  DataCell(Text("$l")),
-                                  DataCell(Text("$h")),
-                                  if (_isAdmin())
-                                    DataCell(
-                                      IconButton(
-                                        icon: const Icon(Icons.edit,
-                                            color: Colors.blue),
-                                        onPressed: () {
-                                          _showFullRowEditor(
-                                            intern['id'],
-                                            intern['name'],
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(emp['name'])),
+
+                                        // -------- INLINE EDIT CELLS --------
+                                        ...List.generate(daysInMonth, (d) {
+                                          final day = d + 1;
+                                          final cellDate = DateTime(
+                                            selectedYear,
+                                            selectedMonth,
+                                            day,
                                           );
-                                        },
-                                      ),
-                                    ),
-                                ],
-                              );
-                            }).toList(),
+
+                                          final value = resolveAttendanceValue(
+                                            cellDate: cellDate,
+                                            data: data,
+                                            day: day,
+                                          );
+
+                                          final isEditing =
+                                              _isAdmin() &&
+                                              editingEmpId == emp['id'] &&
+                                              editingDay == day;
+
+                                          return DataCell(
+                                            isEditing
+                                                ? DropdownButton<String>(
+                                                  value: value,
+                                                  underline: const SizedBox(),
+                                                  items: const [
+                                                    DropdownMenuItem(
+                                                      value: "P",
+                                                      child: Text("P"),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: "A",
+                                                      child: Text("A"),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: "L",
+                                                      child: Text("L"),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: "H",
+                                                      child: Text("H"),
+                                                    ),
+                                                  ],
+                                                  onChanged: (v) {
+                                                    if (v == null) return;
+                                                    updateSingleDay(
+                                                      empId: emp['id'],
+                                                      day: day,
+                                                      status: v,
+                                                    );
+                                                  },
+                                                )
+                                                : InkWell(
+                                                  onTap:
+                                                      _isAdmin()
+                                                          ? () {
+                                                            setState(() {
+                                                              editingEmpId =
+                                                                  emp['id'];
+                                                              editingDay = day;
+                                                            });
+                                                          }
+                                                          : null,
+                                                  child: Text(
+                                                    value!,
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color:
+                                                          value == "P"
+                                                              ? Colors.green
+                                                              : value == "A"
+                                                              ? Colors.red
+                                                              : value == "L"
+                                                              ? Colors.orange
+                                                              : value == "H"
+                                                              ? Colors.blue
+                                                              : Colors.grey,
+                                                    ),
+                                                  ),
+                                                ),
+                                          );
+                                        }),
+
+                                        // -------- TOTALS --------
+                                        DataCell(Text("$p")),
+                                        DataCell(Text("$a")),
+                                        DataCell(Text("$l")),
+                                        DataCell(Text("$h")),
+                                      ],
+                                    );
+                                  }).toList(),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
     );
   }
 

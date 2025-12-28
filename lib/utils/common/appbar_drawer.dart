@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
 import 'package:task_management_application/modules/Admin/presentation/views/super_admin/admin_dashboard.dart';
 import 'package:task_management_application/modules/Admin/presentation/widgets/mange_department_screen.dart';
+import 'package:task_management_application/modules/Attendance/presentation/views/Employee_leave_feedback_screen.dart';
 import 'package:task_management_application/modules/Attendance/presentation/views/add_attendance.dart';
 import 'package:task_management_application/modules/Attendance/presentation/views/leave_appliaction.dart';
 import 'package:task_management_application/modules/Attendance/presentation/widgets/manage_attendance.dart';
@@ -32,41 +33,32 @@ class CommonScaffold extends StatelessWidget {
     this.empId,
     required this.title,
     required this.body,
-    required this.role, 
+    required this.role,
   });
-  
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-       
-        title: Text(
-          title,
-          style: const TextStyle(color: Colors.white),
-        ),
+        title: Text(title, style: const TextStyle(color: Colors.white)),
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.white),
-         flexibleSpace: Container(
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        colors: [
-           Color(0xFF34D0C6),
-      Color(0xFF22A4E0),
-      Color(0xFF1565C0),
-        ],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-  ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF34D0C6), Color(0xFF22A4E0), Color(0xFF1565C0)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: CircleAvatar(
-          backgroundColor: Colors.white,
-          backgroundImage: AssetImage('assets/logo.png'),
-        ),
+              backgroundColor: Colors.white,
+              backgroundImage: AssetImage('assets/logo.png'),
+            ),
           ),
         ],
       ),
@@ -74,8 +66,6 @@ class CommonScaffold extends StatelessWidget {
       body: body,
     );
   }
-
-  
 
   /// === Drawer based on role ===
   Widget _buildDrawer(BuildContext context) {
@@ -90,43 +80,38 @@ class CommonScaffold extends StatelessWidget {
         ),
       ),
 
-ListTile(
-  leading: const Icon(Icons.home, color: KDRTColors.darkBlue),
-  title: const Text("Dashboard"),
-  onTap: () {
-    Navigator.pop(context); // Close the drawer first
+      ListTile(
+        leading: const Icon(Icons.home, color: KDRTColors.darkBlue),
+        title: const Text("Dashboard"),
+        onTap: () {
+          Navigator.pop(context); // Close the drawer first
 
-    // Determine which dashboard to open based on role
-    Widget dashboardPage;
+          // Determine which dashboard to open based on role
+          Widget dashboardPage;
 
-    if (role == "admin" || role == "super admin") {
-      dashboardPage = AdminDashboard( );
-    } else if (role == "employee") {
-      dashboardPage = EmployeeDashboardScreen(
-        currentUserId: UserSession().userId ?? ''
-,
-        currentUserRole: role,
-      );
+          if (role == "admin" || role == "super admin") {
+            dashboardPage = AdminDashboard();
+          } else if (role == "employee") {
+            dashboardPage = EmployeeDashboardScreen(
+              currentUserId: UserSession().userId ?? '',
+              currentUserRole: role,
+            );
+          } else {
+            // Default fallback
+            dashboardPage = InternDashboardScreen(
+              currentUserId: UserSession().userId ?? '',
+              currentUserRole: role,
+            );
+          }
 
-    }
-     
-    else {
-      // Default fallback
-      dashboardPage = InternDashboardScreen(
-        currentUserId: UserSession().userId ?? ''
-,
-        currentUserRole: role,
-      );
-    }
-
-    // Clear all previous screens and go to Dashboard
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => dashboardPage),
-      (route) => false, // Remove all routes to make dashboard the root
-    );
-  },
-),
+          // Clear all previous screens and go to Dashboard
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => dashboardPage),
+            (route) => false, // Remove all routes to make dashboard the root
+          );
+        },
+      ),
     ];
 
     // === Admin Role ===
@@ -136,9 +121,9 @@ ListTile(
         //   context,
         //   icon: Icons.person_add,
         //   label: "Register User",
-        //   page: UserRoleRegistration(currentUserRole: role), 
+        //   page: UserRoleRegistration(currentUserRole: role),
         // ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.assignment,
           label: "Manage Attendance",
@@ -152,35 +137,35 @@ ListTile(
           icon: Icons.people_alt,
           label: "Manage Employee",
           page: ManageEmployeeScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.school,
           label: "Manage Interns",
           page: ManageInternScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
-      _drawerItem(
-  context,
-  icon: Icons.manage_accounts,
-  label: "Manage User Role",
-  page: UserListScreen(),
-),
+        _drawerItem(
+          context,
+          icon: Icons.manage_accounts,
+          label: "Manage User Role",
+          page: UserListScreen(
+            currentUserId: UserSession().userId ?? '',
+            currentUserRole: role,
+          ),
+        ),
 
         _drawerItem(
           context,
           icon: Icons.task_rounded,
           label: "Tasks Allocation",
           page: TaskAllocationScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
@@ -189,8 +174,7 @@ ListTile(
           icon: Icons.business_outlined,
           label: "Manage Department",
           page: ManageDepartmentScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
@@ -199,12 +183,11 @@ ListTile(
           icon: Icons.assignment_outlined,
           label: "Manage Task",
           page: ManageTaskScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
-         
+
         // _drawerItem(
         //   context,
         //   icon: Icons.person_add_alt,
@@ -219,7 +202,6 @@ ListTile(
         // ),
       ]);
     }
-
     // === Super Admin Role ===
     else if (role == "super admin") {
       menuItems.addAll([
@@ -227,9 +209,9 @@ ListTile(
         //   context,
         //   icon: Icons.person_add,
         //   label: "Register User",
-        //   page:UserRoleRegistration(currentUserRole: role), 
+        //   page:UserRoleRegistration(currentUserRole: role),
         // ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.assignment,
           label: "Manage Attendance",
@@ -238,33 +220,30 @@ ListTile(
             currentUserRole: role,
           ),
         ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.people,
           label: "Manage Employee",
           page: ManageEmployeeScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.people,
           label: "Manage Interns",
           page: ManageInternScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.task_rounded,
           label: "Tasks Allocation",
           page: TaskAllocationScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
@@ -273,8 +252,7 @@ ListTile(
           icon: Icons.business_outlined,
           label: "Manage Department",
           page: ManageDepartmentScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
@@ -283,13 +261,11 @@ ListTile(
           icon: Icons.assignment_outlined,
           label: "Manage Task",
           page: ManageTaskScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
-         
-       
+
         // _drawerItem(
         //   context,
         //   icon: Icons.people_alt,
@@ -304,103 +280,83 @@ ListTile(
         // ),
       ]);
     }
-
     // === Employee Role ===
     else if (role == "employee") {
       menuItems.addAll([
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.people,
-        //   label: "Attendance",
-        //   onTap: () {
-        //     if (empId != null && empId!.isNotEmpty) {
-        //       Navigator.push(
-        //         context,
-        //         MaterialPageRoute(
-        //           builder: (context) => EmployeeAttendanceScreen(empId: empId!),
-        //         ),
-        //       );
-        //     } else {
-        //       ScaffoldMessenger.of(context).showSnackBar(
-        //         const SnackBar(
-        //           content:
-        //               Text("Employee ID is missing. Cannot open Attendance."),
-        //           backgroundColor: Colors.red,
-        //         ),
-        //       );
-        //     }
-        //   },
-        // ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.access_time,
           label: "Attendance",
           page: AttendanceScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
+          ),
         ),
-        ),
-          _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.event_busy,
 
           label: "Leave Appliaction",
           page: LeaveApplicationScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
+          ),
         ),
+        _drawerItem(
+          context,
+          icon: Icons.assignment_turned_in,
+          label: "Leave Status",
+          page: EmployeeLeaveHistoryScreen(
+            currentUserId: UserSession().userId ?? '',
+          
+          ),
         ),
-         _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.task_rounded,
           label: "Tasks Allocation",
           page: TaskAllocationScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
         ),
-          _drawerItem(
-      context,
-      icon: Icons.assignment,
-      label: "Task List",
-      page:ParticularEmployeeTaskListScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+        _drawerItem(
+          context,
+          icon: Icons.assignment,
+          label: "Task List",
+          page: ParticularEmployeeTaskListScreen(
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
-       ),
-        
-    //   _drawerItem(
-    //   context,
-    //   icon: Icons.assignment,
-    //   label: "Task List",
-    //   onTap: () async {
-    //     final user = FirebaseAuth.instance.currentUser;
-    //     if (user == null) {
-    //       ScaffoldMessenger.of(context).showSnackBar(
-    //         const SnackBar(content: Text("User not logged in")),
-    //       );
-    //       return;
-    //     }
+        ),
 
-    //     debugPrint("✅ Navigating to Employee Task List for UID: ${user.uid}");
+        //   _drawerItem(
+        //   context,
+        //   icon: Icons.assignment,
+        //   label: "Task List",
+        //   onTap: () async {
+        //     final user = FirebaseAuth.instance.currentUser;
+        //     if (user == null) {
+        //       ScaffoldMessenger.of(context).showSnackBar(
+        //         const SnackBar(content: Text("User not logged in")),
+        //       );
+        //       return;
+        //     }
 
-    //     Navigator.pop(context); // Close drawer
-    //     Navigator.push(
-    //       context,
-    //       MaterialPageRoute(
-    //         builder: (context) => ParticluarEmployeeTaskListScreen(
-    //           currentUserId: user.uid,
-    //           currentUserRole: role,
-    //         ),
-    //       ),
-    //     );
-    //   },
-    // ),
+        //     debugPrint("✅ Navigating to Employee Task List for UID: ${user.uid}");
 
+        //     Navigator.pop(context); // Close drawer
+        //     Navigator.push(
+        //       context,
+        //       MaterialPageRoute(
+        //         builder: (context) => ParticluarEmployeeTaskListScreen(
+        //           currentUserId: user.uid,
+        //           currentUserRole: role,
+        //         ),
+        //       ),
+        //     );
+        //   },
+        // ),
 
         //   _drawerItem(
         //   context,
@@ -420,7 +376,6 @@ ListTile(
         // ),
       ]);
     }
-
     // === Intern Role ===
     else if (role == "intern") {
       menuItems.addAll([
@@ -429,40 +384,38 @@ ListTile(
           icon: Icons.access_time,
           label: "Attendance",
           page: AttendanceScreen(
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
+          ),
         ),
-        ),
-          _drawerItem(
+        _drawerItem(
           context,
           icon: Icons.event_busy,
 
           label: "Leave Appliaction",
           page: LeaveApplicationScreen(
-            currentUserId: UserSession().userId ?? ''
-,
-            currentUserRole: role,
-        ),
-        ),
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.info_outline,
-        //   label: "Visitor Overview",
-        //   page: const VisitorDashboardPage(),
-        // ),
-       _drawerItem(
-      context,
-      icon: Icons.assignment,
-      label: "Task List",
-      page: ParticularEmployeeTaskListScreen
-      (
-            currentUserId: UserSession().userId ?? ''
-,
+            currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
           ),
-       ),
-
+        ),
+        _drawerItem(
+          context,
+          icon: Icons.assignment_turned_in,
+          label: "Leave Status",
+          page: EmployeeLeaveHistoryScreen(
+            currentUserId: UserSession().userId ?? '',
+           
+          ),
+        ),
+        _drawerItem(
+          context,
+          icon: Icons.assignment,
+          label: "Task List",
+          page: ParticularEmployeeTaskListScreen(
+            currentUserId: UserSession().userId ?? '',
+            currentUserRole: role,
+          ),
+        ),
       ]);
     }
 
@@ -477,9 +430,7 @@ ListTile(
 
     return Drawer(
       backgroundColor: Colors.white,
-      child: SingleChildScrollView(
-        child: Column(children: menuItems),
-      ),
+      child: SingleChildScrollView(child: Column(children: menuItems)),
     );
   }
 
@@ -494,7 +445,8 @@ ListTile(
     return ListTile(
       leading: Icon(icon, color: KDRTColors.darkBlue),
       title: Text(label),
-      onTap: onTap ??
+      onTap:
+          onTap ??
           () {
             Navigator.pop(context);
             Navigator.push(
@@ -510,74 +462,83 @@ ListTile(
     await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => Dialog(
-        backgroundColor: KDRTColors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Container(
-          width: 300,
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Lottie.asset('assets/confirmation.json',
-                  height: 120, width: 120, fit: BoxFit.contain),
-              const SizedBox(height: 16),
-              const Text(
-                'Are you sure you want to logout?',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  await FirebaseAuth.instance.signOut();
-
-                  // Navigate to role selection screen
-                  Navigator.pop(context);
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => UserLoginScreen()),
-                    (route) => false,
-                  );
-
-                  // Close app if required
-                  if (UniversalPlatform.isDesktop) {
-                    exit(0);
-                  } else if (UniversalPlatform.isMobile) {
-                    SystemNavigator.pop();
-                  }
-                } catch (e) {
-                  debugPrint('Logout error: $e');
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.white,
-                backgroundColor: KDRTColors.darkBlue,
-              ),
-              child: const Text('Yes'),
+      builder:
+          (_) => Dialog(
+            backgroundColor: KDRTColors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.white,
-                backgroundColor: KDRTColors.cyan,
-              ),
-              child: const Text('No'),
+            child: Container(
+              width: 300,
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Lottie.asset(
+                    'assets/confirmation.json',
+                    height: 120,
+                    width: 120,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Are you sure you want to logout?',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () async {
+                          try {
+                            await FirebaseAuth.instance.signOut();
+
+                            // Navigate to role selection screen
+                            Navigator.pop(context);
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => UserLoginScreen(),
+                              ),
+                              (route) => false,
+                            );
+
+                            // Close app if required
+                            if (UniversalPlatform.isDesktop) {
+                              exit(0);
+                            } else if (UniversalPlatform.isMobile) {
+                              SystemNavigator.pop();
+                            }
+                          } catch (e) {
+                            debugPrint('Logout error: $e');
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: KDRTColors.darkBlue,
+                        ),
+                        child: const Text('Yes'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: KDRTColors.cyan,
+                        ),
+                        child: const Text('No'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
   }
 }
