@@ -40,6 +40,8 @@ class _AttendanceDashboardAllScreenState
   int selectedMonth = DateTime.now().month;
   int selectedYear = DateTime.now().year;
 
+   Map<String, String> holidayMap = {};
+
   late final List<int> years;
   final List<String> monthNames = List.generate(
     12,
@@ -68,7 +70,8 @@ class _AttendanceDashboardAllScreenState
     setState(() => isLoading = true);
 
     await fetchEmployees();
-    await generateAttendanceSheet();
+    await fetchHolidays();
+   
 
     setState(() => isLoading = false);
   }
@@ -82,126 +85,71 @@ class _AttendanceDashboardAllScreenState
           final data = d.data();
           return {'id': d.id, 'name': data['emp_name'] ?? "User"};
         }).toList();
+   await fetchAttendance();
   }
 
-  // ---------------- GENERATE SHEET ----------------
-  Future<void> generateAttendanceSheet() async {
-    attendanceTable.clear();
+  // --------------------------------------------------
+  // 🔹 FETCH ATTENDANCE (CORRECT MAPPING)
+  // --------------------------------------------------
+ Future<void> fetchAttendance() async {
+  attendanceTable.clear();
 
-    presentCount = 0;
-    absentCount = 0;
-    holidayCount = 0;
-    leaveCount = 0;
+  for (final emp in employees) {
+    final empId = emp['id'];
 
-    final start = DateTime(selectedYear, selectedMonth, 1);
-    final end = DateTime(selectedYear, selectedMonth + 1, 0);
+    print("🔵 Fetching attendance for intern: $empId");
 
-    for (var emp in employees) {
-      String empId = emp['id'];
-      Map<String, String> row = {};
+    final snapshot = await _firestore
+        .collection('attendance')
+        .doc(empId)
+        .collection('records')
+        .get();
 
-      // Attendance from Firestore
-      final recSnap =
-          await _firestore
-              .collection('attendance')
-              .doc(empId)
-              .collection('records')
-              .get();
+    attendanceTable[empId] = {};
 
-      Map<String, String> attendanceDates = {
-        for (var d in recSnap.docs)
-          (d.data()['date'] ?? d.id).toString():
-              (d.data()['status'] ?? 'Present'),
-      };
+    for (final doc in snapshot.docs) {
+      print(
+        "   📄 Firestore record → ${doc.id} : ${doc['status']}",
+      );
 
-      // Holidays
-      final holSnap = await _firestore.collection('holidays').get();
-      final holidayDates = holSnap.docs.map((d) => d.id).toSet();
+      final rawStatus = doc['status'];
 
-      // Leave
-      final leaveSnap =
-          await _firestore
-              .collection('leave_applications')
-              .doc(empId)
-              .collection('applications')
-              .where('status', isEqualTo: 'approved')
-              .get();
+String normalizedStatus;
+switch (rawStatus) {
+  case 'Present':
+    normalizedStatus = 'P';
+    break;
+  case 'Absent':
+    normalizedStatus = 'A';
+    break;
+  case 'Leave':
+    normalizedStatus = 'L';
+    break;
+  case 'Holiday':
+    normalizedStatus = 'H';
+    break;
+  case 'P':
+  case 'A':
+  case 'L':
+  case 'H':
+    normalizedStatus = rawStatus;
+    break;
+  default:
+    normalizedStatus = '-';
+}
 
-      Set<String> leaveDates = {};
-      for (var d in leaveSnap.docs) {
-        final startDate = DateTime.parse(d['startDate']);
-        final endDate = DateTime.parse(d['endDate']);
+attendanceTable[empId]![doc.id] = normalizedStatus;
 
-        DateTime temp = startDate;
-        while (!temp.isAfter(endDate)) {
-          leaveDates.add(DateFormat('yyyy-MM-dd').format(temp));
-          temp = temp.add(const Duration(days: 1));
-        }
-      }
-
-      DateTime day = start;
-      while (!day.isAfter(end)) {
-        String key = DateFormat('yyyy-MM-dd').format(day);
-        String value = "A";
-
-        if (attendanceDates.containsKey(key)) {
-          value = "P";
-          presentCount++;
-        } else if (leaveDates.contains(key)) {
-          value = "L";
-          leaveCount++;
-        } else if (holidayDates.contains(key)) {
-          value = "H";
-          holidayCount++;
-        } else {
-          value = "A";
-          absentCount++;
-        }
-
-        row[day.day.toString()] = value;
-        day = day.add(const Duration(days: 1));
-      }
-
-      attendanceTable[empId] = row;
     }
   }
+  
 
-  String? resolveAttendanceValue({
-    required DateTime cellDate,
-    required Map<String, String> data,
-    required int day,
-  }) {
-    final key = day.toString();
-    final now = DateTime.now();
-    final todayDate = DateTime(now.year, now.month, now.day);
-    final cellOnlyDate = DateTime(cellDate.year, cellDate.month, cellDate.day);
+  print("✅ Attendance table loaded:");
+  print(attendanceTable);
 
-    final storedValue = data[key];
+  setState(() {});
+}
 
-    // 🔹 FUTURE → always "-"
-    if (cellOnlyDate.isAfter(todayDate)) {
-      return "-";
-    }
-
-    // 🔹 TODAY → "-" until 12 PM, then "A"
-    if (cellOnlyDate.isAtSameMomentAs(todayDate)) {
-      final noon = DateTime(todayDate.year, todayDate.month, todayDate.day, 12);
-
-      if (now.isAfter(noon)) {
-        return storedValue == "P" || storedValue == "L" || storedValue == "H"
-            ? storedValue
-            : "A";
-      }
-      return "-";
-    }
-
-    // 🔹 PAST
-    if (storedValue != null) {
-      return storedValue;
-    }
-
-    return "A";
-  }
 
   void exportAttendanceCSV() {
     final daysInMonth = DateTime(selectedYear, selectedMonth + 1, 0).day;
@@ -226,9 +174,11 @@ class _AttendanceDashboardAllScreenState
       for (int d = 1; d <= daysInMonth; d++) {
         final cellDate = DateTime(selectedYear, selectedMonth, d);
 
-        final value =
-            resolveAttendanceValue(cellDate: cellDate, data: data, day: d) ??
-            "-";
+        final dateStr =
+            "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
+
+        final value = holidayMap.containsKey(dateStr) ? "H" : data[dateStr] ?? "-";
+
 
         row.add(value);
 
@@ -258,13 +208,15 @@ class _AttendanceDashboardAllScreenState
     html.Url.revokeObjectUrl(url);
   }
 
+  // 🔹 UPDATE SINGLE DAY
+  // --------------------------------------------------
   Future<void> updateSingleDay({
     required String empId,
     required int day,
     required String status,
   }) async {
     final dateStr =
-        "${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
+        "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
 
     await _firestore
         .collection("attendance")
@@ -274,96 +226,147 @@ class _AttendanceDashboardAllScreenState
         .set({"date": dateStr, "status": status}, SetOptions(merge: true));
 
     setState(() {
-      attendanceTable[empId]?[day.toString()] = status;
+      attendanceTable.putIfAbsent(empId, () => {});
+      attendanceTable[empId]![dateStr] = status;
       editingEmpId = null;
       editingDay = null;
     });
   }
 
-  // ---------------- ADD HOLIDAY POPUP ----------------
-  void _showAddHolidayDialog() {
-    final dateCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    DateTime? selectedDate;
+ // ---------------- ADD HOLIDAY POPUP ----------------
+void _showAddHolidayDialog() {
+  final dateCtrl = TextEditingController();
+  final nameCtrl = TextEditingController();
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text("Add Holiday"),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    readOnly: true,
-                    controller: dateCtrl,
-                    decoration: const InputDecoration(
-                      labelText: "Select Date",
-                      suffixIcon: Icon(Icons.calendar_month),
-                    ),
-                    onTap: () async {
-                      final now = DateTime.now();
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: now,
-                        firstDate: DateTime(now.year - 1),
-                        lastDate: DateTime(now.year + 1),
-                      );
-
-                      if (picked != null) {
-                        selectedDate = picked;
-                        dateCtrl.text = DateFormat(
-                          'yyyy-MM-dd',
-                        ).format(selectedDate!);
-                        setState(() {});
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: "Holiday Name",
-                    ),
-                  ),
-                ],
+  showDialog(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: const Text("Add Holiday"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              readOnly: true,
+              controller: dateCtrl,
+              decoration: const InputDecoration(
+                labelText: "Select Date",
+                suffixIcon: Icon(Icons.calendar_month),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (dateCtrl.text.isEmpty) return;
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: dialogContext,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime(DateTime.now().year - 1),
+                  lastDate: DateTime(DateTime.now().year + 1),
+                );
 
-                    await _firestore
-                        .collection("holidays")
-                        .doc(dateCtrl.text)
-                        .set({
-                          "name": nameCtrl.text.trim(),
-                          "created_at": DateTime.now().toIso8601String(),
-                        });
+                if (picked != null) {
+                  dateCtrl.text =
+                      DateFormat('yyyy-MM-dd').format(picked);
+                }
+              },
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: "Holiday Name",
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (dateCtrl.text.isEmpty ||
+                  nameCtrl.text.trim().isEmpty) {
+                return;
+              }
 
-                    Navigator.pop(context);
-                    fetchData();
-                  },
-                  child: const Text("Add Holiday"),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+              await _firestore
+                  .collection("holidays")
+                  .doc(dateCtrl.text)
+                  .set({
+                "name": nameCtrl.text.trim(),
+                "created_at": DateTime.now().toIso8601String(),
+              });
+
+              Navigator.pop(dialogContext);
+
+              // 🔥 THIS IS IMPORTANT
+              await fetchData(); // reload attendance + holidays
+            },
+            child: const Text("Add Holiday"),
+          ),
+        ],
+      );
+    },
+  ).then((_) {
+    dateCtrl.dispose();
+    nameCtrl.dispose();
+  });
+}
+
+Future<void> fetchHolidays() async {
+  final snapshot = await _firestore.collection('holidays').get();
+
+  holidayMap.clear();
+
+  for (var doc in snapshot.docs) {
+    holidayMap[doc.id] = doc['name'] ?? '';
   }
 
-  // ---------------- UI ----------------
+  debugPrint("🎉 Holidays Loaded: $holidayMap");
+
+  setState(() {});
+}
+
+
+// ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
-    final daysInMonth = DateTime(selectedYear, selectedMonth + 1, 0).day;
+  final daysInMonth = DateTime(selectedYear, selectedMonth + 1, 0).day;
+
+int presentCount = 0;
+int absentCount = 0;
+int leaveCount = 0;
+int holidayCount = 0;
+
+// Loop per employee
+for (var emp in employees) {
+  final empId = emp['id'];
+  final data = attendanceTable[empId] ?? {};
+
+  for (int d = 1; d <= daysInMonth; d++) {
+    final dateStr =
+        "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
+
+    final value = holidayMap.containsKey(dateStr)
+        ? "H"
+        : data[dateStr] ?? "-";
+
+    switch (value) {
+      case "P":
+        presentCount++;
+        break;
+      case "A":
+        absentCount++;
+        break;
+      case "L":
+        leaveCount++;
+        break;
+      case "H":
+        holidayCount++;
+        break;
+    }
+  }
+}
+
 
     return Scaffold(
       appBar: AppBar(
@@ -465,7 +468,7 @@ class _AttendanceDashboardAllScreenState
                         tooltip: "Refresh",
                       ),
                       // Add holiday icon
-                      if (_isAdmin()) ...[
+                      ...[
                         IconButton(
                           onPressed: _showAddHolidayDialog,
                           icon: const Icon(
@@ -522,45 +525,67 @@ class _AttendanceDashboardAllScreenState
                               ],
                               rows:
                                   employees.map((emp) {
-                                    final data =
-                                        attendanceTable[emp['id']] ?? {};
+                                    final empId = emp['id'];
+                                    final data = attendanceTable[empId] ?? {};
 
-                                    int p = 0, a = 0, l = 0, h = 0;
-                                    for (var v in data.values) {
-                                      if (v == "P") p++;
-                                      if (v == "A") a++;
-                                      if (v == "L") l++;
-                                      if (v == "H") h++;
-                                    }
+                                   int p = 0, a = 0, l = 0, h = 0;
+
+for (int d = 1; d <= daysInMonth; d++) {
+  final dateStr =
+      "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
+
+  final value = holidayMap.containsKey(dateStr)
+      ? "H"
+      : data[dateStr] ?? "-";
+
+  switch (value) {
+    case "P":
+      p++;
+      break;
+    case "A":
+      a++;
+      break;
+    case "L":
+      l++;
+      break;
+    case "H":
+      h++;
+      break;
+  }
+}
+
 
                                     return DataRow(
                                       cells: [
                                         DataCell(Text(emp['name'])),
 
-                                        // -------- INLINE EDIT CELLS --------
                                         ...List.generate(daysInMonth, (d) {
                                           final day = d + 1;
-                                          final cellDate = DateTime(
-                                            selectedYear,
-                                            selectedMonth,
-                                            day,
-                                          );
+                                          final dateStr =
+                                              "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
 
-                                          final value = resolveAttendanceValue(
-                                            cellDate: cellDate,
-                                            data: data,
-                                            day: day,
-                                          );
+                                          String value;
+
+if (holidayMap.containsKey(dateStr)) {
+  value = "H";
+} else {
+  value = data[dateStr] ?? "-";
+}
+
 
                                           final isEditing =
                                               _isAdmin() &&
-                                              editingEmpId == emp['id'] &&
+                                              editingEmpId == empId &&
                                               editingDay == day;
 
                                           return DataCell(
                                             isEditing
                                                 ? DropdownButton<String>(
-                                                  value: value,
+                                                  key: ValueKey("$empId-$day"),
+                                                  value:
+                                                      value == "-"
+                                                          ? null
+                                                          : value,
                                                   underline: const SizedBox(),
                                                   items: const [
                                                     DropdownMenuItem(
@@ -583,7 +608,7 @@ class _AttendanceDashboardAllScreenState
                                                   onChanged: (v) {
                                                     if (v == null) return;
                                                     updateSingleDay(
-                                                      empId: emp['id'],
+                                                      empId: empId,
                                                       day: day,
                                                       status: v,
                                                     );
@@ -595,13 +620,13 @@ class _AttendanceDashboardAllScreenState
                                                           ? () {
                                                             setState(() {
                                                               editingEmpId =
-                                                                  emp['id'];
+                                                                  empId;
                                                               editingDay = day;
                                                             });
                                                           }
                                                           : null,
                                                   child: Text(
-                                                    value!,
+                                                    value,
                                                     style: TextStyle(
                                                       fontWeight:
                                                           FontWeight.bold,
@@ -621,7 +646,6 @@ class _AttendanceDashboardAllScreenState
                                           );
                                         }),
 
-                                        // -------- TOTALS --------
                                         DataCell(Text("$p")),
                                         DataCell(Text("$a")),
                                         DataCell(Text("$l")),
