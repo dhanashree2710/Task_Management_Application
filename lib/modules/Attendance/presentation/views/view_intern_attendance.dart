@@ -1,11 +1,10 @@
 import 'dart:ui';
 import 'package:csv/csv.dart';
 import 'dart:convert';
-import 'dart:html' as html;
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../widgets/csv_export.dart';
 
 class InternAttendanceDashboardScreen extends StatefulWidget {
   final String currentUserId;
@@ -151,63 +150,58 @@ attendanceTable[empId]![doc.id] = normalizedStatus;
   setState(() {});
 }
 
+void exportAttendanceCSV() async {
+  final daysInMonth = DateTime(selectedYear, selectedMonth + 1, 0).day;
 
-  void exportAttendanceCSV() {
-    final daysInMonth = DateTime(selectedYear, selectedMonth + 1, 0).day;
+  List<List<String>> rows = [];
 
-    List<List<String>> rows = [];
-
-    // Header
-    List<String> header = ["Intern"];
-    for (int d = 1; d <= daysInMonth; d++) {
-      header.add(d.toString());
-    }
-    header.addAll(["P", "A", "L", "H"]);
-    rows.add(header);
-
-    // Data
-    for (var emp in interns) {
-      final data = attendanceTable[emp['id']] ?? {};
-      int p = 0, a = 0, l = 0, h = 0;
-
-      List<String> row = [emp['name']];
-
-      for (int d = 1; d <= daysInMonth; d++) {
-        final cellDate = DateTime(selectedYear, selectedMonth, d);
-
-        final dateStr =
-            "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
-
-        final value = holidayMap.containsKey(dateStr) ? "H" : data[dateStr] ?? "-";
-
-
-        row.add(value);
-
-        if (value == "P") p++;
-        if (value == "A") a++;
-        if (value == "L") l++;
-        if (value == "H") h++;
-      }
-
-      row.addAll([p.toString(), a.toString(), l.toString(), h.toString()]);
-      rows.add(row);
-    }
-
-    final csvData = const ListToCsvConverter().convert(rows);
-
-    final bytes = utf8.encode(csvData);
-    final blob = html.Blob([bytes]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-
-    html.AnchorElement(href: url)
-      ..setAttribute(
-        "download",
-        "attendance_${selectedMonth}_$selectedYear.csv",
-      )
-      ..click();
-
-    html.Url.revokeObjectUrl(url);
+  // Header
+  List<String> header = ["Employee"];
+  for (int d = 1; d <= daysInMonth; d++) {
+    header.add(d.toString());
   }
+  header.addAll(["P", "A", "L", "H"]);
+  rows.add(header);
+
+  // Data
+  for (var emp in interns) {
+    final data = attendanceTable[emp['id']] ?? {};
+    int p = 0, a = 0, l = 0, h = 0;
+
+    List<String> row = [emp['name']];
+
+    for (int d = 1; d <= daysInMonth; d++) {
+      final dateStr =
+          "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
+
+      final value =
+          holidayMap.containsKey(dateStr) ? "H" : data[dateStr] ?? "-";
+
+      row.add(value);
+
+      if (value == "P") p++;
+      if (value == "A") a++;
+      if (value == "L") l++;
+      if (value == "H") h++;
+    }
+
+    row.addAll([
+      p.toString(),
+      a.toString(),
+      l.toString(),
+      h.toString(),
+    ]);
+
+    rows.add(row);
+  }
+
+  final csvData = const ListToCsvConverter().convert(rows);
+
+  await exportCsv(
+    csvData,
+    "attendance_${selectedMonth}_$selectedYear.csv",
+  );
+}
 
   // 🔹 UPDATE SINGLE DAY
   // --------------------------------------------------
@@ -419,73 +413,76 @@ for (var emp in interns) {
                   ),
 
                   // Filters Row
-                  Row(
-                    children: [
-                      const SizedBox(width: 12),
-                      // Month dropdown
-                      DropdownButton<int>(
-                        value: selectedMonth,
-                        items: List.generate(
-                          12,
-                          (i) => DropdownMenuItem(
-                            value: i + 1,
-                            child: Text(monthNames[i]),
-                          ),
-                        ),
-                        onChanged:
-                            (v) => setState(
-                              () => selectedMonth = v ?? selectedMonth,
+                 SingleChildScrollView(
+  scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        // Month dropdown
+                        DropdownButton<int>(
+                          value: selectedMonth,
+                          items: List.generate(
+                            12,
+                            (i) => DropdownMenuItem(
+                              value: i + 1,
+                              child: Text(monthNames[i]),
                             ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Year dropdown
-                      DropdownButton<int>(
-                        value: selectedYear,
-                        items:
-                            years
-                                .map(
-                                  (y) => DropdownMenuItem(
-                                    value: y,
-                                    child: Text('$y'),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged:
-                            (v) => setState(
-                              () => selectedYear = v ?? selectedYear,
-                            ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Apply button
-                      ElevatedButton(
-                        onPressed: fetchData,
-                        child: const Text("Apply"),
-                      ),
-                      const SizedBox(width: 12),
-                      // Refresh icon
-                      IconButton(
-                        onPressed: fetchData,
-                        icon: const Icon(Icons.refresh, color: Colors.blue),
-                        tooltip: "Refresh",
-                      ),
-                      // Add holiday icon
-                      ...[
-                        IconButton(
-                          onPressed: _showAddHolidayDialog,
-                          icon: const Icon(
-                            Icons.beach_access,
-                            color: Colors.orange,
                           ),
-                          tooltip: "Add Holiday",
+                          onChanged:
+                              (v) => setState(
+                                () => selectedMonth = v ?? selectedMonth,
+                              ),
                         ),
-
+                        const SizedBox(width: 12),
+                        // Year dropdown
+                        DropdownButton<int>(
+                          value: selectedYear,
+                          items:
+                              years
+                                  .map(
+                                    (y) => DropdownMenuItem(
+                                      value: y,
+                                      child: Text('$y'),
+                                    ),
+                                  )
+                                  .toList(),
+                          onChanged:
+                              (v) => setState(
+                                () => selectedYear = v ?? selectedYear,
+                              ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Apply button
+                        ElevatedButton(
+                          onPressed: fetchData,
+                          child: const Text("Apply"),
+                        ),
+                        const SizedBox(width: 12),
+                        // Refresh icon
                         IconButton(
-                          onPressed: exportAttendanceCSV,
-                          icon: const Icon(Icons.download, color: Colors.green),
-                          tooltip: "Export Attendance",
+                          onPressed: fetchData,
+                          icon: const Icon(Icons.refresh, color: Colors.blue),
+                          tooltip: "Refresh",
                         ),
+                        // Add holiday icon
+                        ...[
+                          IconButton(
+                            onPressed: _showAddHolidayDialog,
+                            icon: const Icon(
+                              Icons.beach_access,
+                              color: Colors.orange,
+                            ),
+                            tooltip: "Add Holiday",
+                          ),
+                    
+                          IconButton(
+                            onPressed: exportAttendanceCSV,
+                            icon: const Icon(Icons.download, color: Colors.green),
+                            tooltip: "Export Attendance",
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 10),
 
