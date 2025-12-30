@@ -59,19 +59,81 @@ final String currentUserRole;
           ),
         ),
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: Column(
+  children: [
+    // 🔘 ACTION BUTTONS
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // ✅ MARK ALL AS READ
+          ElevatedButton.icon(
+            icon: const Icon(Icons.done_all, size: 18),
+            label: const Text("Mark all read"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onPressed: () async {
+              final batch = FirebaseFirestore.instance.batch();
+
+              final snapshot = await FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('user_ref', isEqualTo: userRef)
+                  .where('is_read', isEqualTo: false)
+                  .get();
+
+              for (var doc in snapshot.docs) {
+                batch.update(doc.reference, {'is_read': true});
+              }
+
+              await batch.commit();
+            },
+          ),
+
+          // ❌ CLEAR ALL
+          ElevatedButton.icon(
+            icon: const Icon(Icons.delete, size: 18),
+            label: const Text("Clear all"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onPressed: () async {
+              final snapshot = await FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('user_ref', isEqualTo: userRef)
+                  .get();
+
+              final batch = FirebaseFirestore.instance.batch();
+
+              for (var doc in snapshot.docs) {
+                batch.delete(doc.reference);
+              }
+
+              await batch.commit();
+            },
+          ),
+        ],
+      ),
+    ),
+
+    // 🔔 NOTIFICATION LIST
+    Expanded(
+      child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('notifications')
             .where('user_ref', isEqualTo: userRef)
             .orderBy('timestamp', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          // 🔄 Loading
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // ❌ Error
           if (snapshot.hasError) {
             return Center(
               child: Text(
@@ -81,18 +143,13 @@ final String currentUserRole;
             );
           }
 
-          // 📭 Empty
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(
-              child: Text(
-                "No notifications",
-                style: TextStyle(fontSize: 16),
-              ),
+              child: Text("No notifications"),
             );
           }
 
           final docs = snapshot.data!.docs;
-          print("📦 Notifications found: ${docs.length}");
 
           return ListView.builder(
             itemCount: docs.length,
@@ -104,7 +161,7 @@ final String currentUserRole;
                 leading: Icon(
                   Icons.notifications,
                   color: data['is_read'] == true
-                      ? Colors.white
+                      ? Colors.grey
                       : Colors.blue,
                 ),
                 title: Text(
@@ -118,23 +175,15 @@ final String currentUserRole;
                 subtitle: Text(data['message'] ?? ''),
                 trailing: data['is_read'] == true
                     ? null
-                    : const Icon(
-                        Icons.circle,
-                        color: Colors.red,
-                        size: 10,
-                      ),
+                    : const Icon(Icons.circle, color: Colors.red, size: 10),
                 onTap: () async {
-                  // ✅ Mark as read
                   await FirebaseFirestore.instance
                       .collection('notifications')
                       .doc(doc.id)
                       .update({'is_read': true});
 
-                  // 🔜 Navigate to task using task_ref
                   final taskRef = data['task_ref'] as DocumentReference?;
                   if (taskRef == null) return;
-
-                  final taskId = taskRef.id;
 
                   Navigator.pushReplacement(
                     context,
@@ -142,7 +191,6 @@ final String currentUserRole;
                       builder: (_) => EmployeeDashboardScreen(
                         currentUserId: currentUserId,
                         currentUserRole: currentUserRole,
-                       // highlightTaskId: taskId, // Optional: highlight this task
                       ),
                     ),
                   );
@@ -152,6 +200,11 @@ final String currentUserRole;
           );
         },
       ),
+    ),
+  ],
+),
     );
+    
+
   }
 }

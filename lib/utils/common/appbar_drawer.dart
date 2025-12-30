@@ -8,6 +8,7 @@ import 'package:task_management_application/modules/Admin/presentation/widgets/m
 import 'package:task_management_application/modules/Attendance/presentation/views/Employee_leave_feedback_screen.dart';
 import 'package:task_management_application/modules/Attendance/presentation/views/add_attendance.dart';
 import 'package:task_management_application/modules/Attendance/presentation/views/leave_appliaction.dart';
+import 'package:task_management_application/modules/Attendance/presentation/views/particular_user_attendence.dart';
 import 'package:task_management_application/modules/Attendance/presentation/widgets/manage_attendance.dart';
 import 'package:task_management_application/modules/Employee/presentation/views/employee_dashboard.dart';
 import 'package:task_management_application/modules/Employee/presentation/widgets/mange_employee_screen.dart';
@@ -15,6 +16,7 @@ import 'package:task_management_application/modules/Interns/presentation/views/i
 import 'package:task_management_application/modules/Interns/presentation/widgets/mange_interns_screen.dart';
 import 'package:task_management_application/modules/Login/presentation/views/user_role_List.dart';
 import 'package:task_management_application/modules/Login/presentation/views/user_role_login.dart';
+import 'package:task_management_application/modules/Report/presentation/views/particluar_user_report.dart';
 import 'package:task_management_application/modules/Task/presentation/views/intern_task_list.dart';
 import 'package:task_management_application/modules/Task/presentation/views/manage_task.dart';
 import 'package:task_management_application/modules/Task/presentation/views/task_allocation.dart';
@@ -294,6 +296,15 @@ class CommonScaffold extends StatelessWidget {
         ),
         _drawerItem(
           context,
+            icon: Icons.visibility,
+          label: "View Attendance",
+          page: AttendanceDashboardForLoginUser(
+            currentUserId: UserSession().userId ?? '',
+            currentUserRole: role,
+          ),
+        ),
+        _drawerItem(
+          context,
           icon: Icons.event_busy,
 
           label: "Leave Appliaction",
@@ -308,7 +319,6 @@ class CommonScaffold extends StatelessWidget {
           label: "Leave Status",
           page: EmployeeLeaveHistoryScreen(
             currentUserId: UserSession().userId ?? '',
-          
           ),
         ),
         _drawerItem(
@@ -329,7 +339,15 @@ class CommonScaffold extends StatelessWidget {
             currentUserRole: role,
           ),
         ),
-
+        _drawerItem(
+          context,
+          icon: Icons.school,
+          label: "Task Report",
+          page: EmployeeTaskReportScreen(
+          employeeId: UserSession().userId ?? '',       
+          
+          ),
+        ),
         //   _drawerItem(
         //   context,
         //   icon: Icons.assignment,
@@ -388,6 +406,15 @@ class CommonScaffold extends StatelessWidget {
             currentUserRole: role,
           ),
         ),
+         _drawerItem(
+          context,
+            icon: Icons.visibility,
+          label: "View Attendance",
+          page: AttendanceDashboardForLoginUser(
+            currentUserId: UserSession().userId ?? '',
+            currentUserRole: role,
+          ),
+        ),
         _drawerItem(
           context,
           icon: Icons.event_busy,
@@ -404,7 +431,6 @@ class CommonScaffold extends StatelessWidget {
           label: "Leave Status",
           page: EmployeeLeaveHistoryScreen(
             currentUserId: UserSession().userId ?? '',
-           
           ),
         ),
         _drawerItem(
@@ -414,6 +440,15 @@ class CommonScaffold extends StatelessWidget {
           page: ParticularEmployeeTaskListScreen(
             currentUserId: UserSession().userId ?? '',
             currentUserRole: role,
+          ),
+        ),
+        _drawerItem(
+          context,
+          icon: Icons.school,
+          label: "Task Report",
+          page: EmployeeTaskReportScreen(
+          employeeId: UserSession().userId ?? '',
+          
           ),
         ),
       ]);

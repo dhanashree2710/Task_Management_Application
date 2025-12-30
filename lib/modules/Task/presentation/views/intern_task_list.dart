@@ -129,286 +129,163 @@ class _ParticularEmployeeTaskListScreenState
     }
   }
 
-  /// =========================
-  /// UPDATE TASK PROGRESS
-  /// =========================
-  Future<void> updateTaskProgress({
-    required String taskId,
-    required int progress,
-    String description = '',
-  }) async {
-    final now = FieldValue.serverTimestamp();
+/// =========================
+/// SAFE TIMESTAMP GETTER
+/// =========================
+DateTime getSafeTime(Map<String, dynamic> data) {
+  final keys = [
+    'timestamp',     // forced entries
+    'date',          // report date
+    'start_date',    
+    'completed_date',
+    'updated_at',
+  ];
 
-    debugPrint("🔹 Updating Task: $taskId with progress: $progress%");
-
-    // 🔹 Update task document
-    await FirebaseFirestore.instance.collection('tasks').doc(taskId).update({
-      'progress_percent': progress, // numeric
-      'updated_at': now,
-      if (progress == 100) ...{'status': 'Completed', 'completed_date': now},
-    });
-
-    debugPrint("✅ Task document updated");
-
-    // 🔹 Create report entry
-    await FirebaseFirestore.instance.collection('reports').add({
-      'task_id': taskId,
-      'progress_percent': progress, // numeric
-      'description': progress == 100 ? 'Task completed' : description,
-      'timestamp': now, // single source of truth
-    });
-
-    debugPrint("✅ Report added for task $taskId with progress $progress%");
+  for (final key in keys) {
+    final value = data[key];
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
   }
 
-  /// =========================
-  /// SAFE TIMESTAMP FETCH
-  /// =========================
-  DateTime getSafeTime(Map<String, dynamic> data) {
-    if (data['timestamp'] is Timestamp)
-      return (data['timestamp'] as Timestamp).toDate();
-    if (data['created_at'] is Timestamp)
-      return (data['created_at'] as Timestamp).toDate();
-    if (data['updated_at'] is Timestamp)
-      return (data['updated_at'] as Timestamp).toDate();
-    if (data['date'] is Timestamp) return (data['date'] as Timestamp).toDate();
+  // fallback so UI never crashes
+  return DateTime.fromMillisecondsSinceEpoch(0);
+}
 
-    debugPrint("⚠️ No valid timestamp found, returning DateTime.now()");
-    return DateTime.now();
-  }
+/// =========================
+/// BUILD FULL TIMELINE
+/// =========================
+Future<List<Map<String, dynamic>>> buildProgressTimeline(Map<String, dynamic> task) async {
+  final List<Map<String, dynamic>> timeline = [];
+  final taskId = task['task_id'];
 
-  /// =========================
-  /// FETCH REPORTS TIMELINE
-  /// =========================
-  Future<List<Map<String, dynamic>>> fetchReportsTimeline(
-    Map<String, dynamic> task,
-  ) async {
-    try {
-      final taskId = task['task_id'];
-      final snapshot =
-          await FirebaseFirestore.instance
-              .collection('reports')
-              .where('task_id', isEqualTo: taskId)
-              .get();
+  // Fetch reports
+  final snapshot = await FirebaseFirestore.instance
+      .collection('reports')
+      .where('task_id', isEqualTo: taskId)
+      .get();
 
-      final reports = snapshot.docs.map((e) => e.data()).toList();
+  Timestamp? firstStart;
 
-      debugPrint("🔹 Fetched ${reports.length} reports for task $taskId");
-
-      // 🔹 Add latest task progress if not already in reports
-      final taskProgress = task['progress_percent'];
-      if (taskProgress != null) {
-        final progress =
-            taskProgress is num
-                ? taskProgress.toDouble()
-                : double.tryParse(taskProgress.toString()) ?? 0;
-
-        // Check if 100% report exists
-        final has100Report = reports.any((r) {
-          final rProgress = r['progress_percent'];
-          final val =
-              rProgress is num
-                  ? rProgress.toDouble()
-                  : double.tryParse(rProgress?.toString() ?? '0') ?? 0;
-          return val == progress && progress == 100;
-        });
-
-        if (progress == 100 && !has100Report) {
-          reports.add({
-            'progress_percent': 100,
-            'description': 'Task completed',
-            'timestamp':
-                task['completed_date'] ?? task['updated_at'] ?? Timestamp.now(),
-          });
-        }
-      }
-
-      // Sort by timestamp
-      reports.sort((a, b) {
-        final at = getSafeTime(a);
-        final bt = getSafeTime(b);
-        return at.compareTo(bt);
-      });
-
-      // Debug print elapsed
-      DateTime? prevTime;
-      for (var i = 0; i < reports.length; i++) {
-        final report = reports[i];
-        final currentTime = getSafeTime(report);
-
-        String elapsedTime = "0 min";
-        if (prevTime != null) {
-          final diff = currentTime.difference(prevTime);
-          final h = diff.inHours;
-          final m = diff.inMinutes.remainder(60);
-          elapsedTime =
-              diff.inMinutes > 0 ? "${h > 0 ? "$h hr " : ""}$m min" : "0 min";
-        }
-
-        final raw = report['progress_percent'];
-        final progress =
-            raw is num
-                ? raw.toDouble()
-                : double.tryParse(raw?.toString() ?? '0') ?? 0;
-
-        debugPrint(
-          "Report ${i + 1}: Progress = ${progress.toInt()}%, Timestamp = $currentTime, Elapsed since prev = $elapsedTime",
-        );
-
-        prevTime = currentTime;
-      }
-
-      return reports;
-    } catch (e) {
-      debugPrint("❌ Fetch error: $e");
-      return [];
+  for (final doc in snapshot.docs) {
+    final data = doc.data();
+    if (firstStart == null && data['start_date'] is Timestamp) {
+      firstStart = data['start_date'];
     }
+
+    // ensure timestamp exists for sorting
+    if (!data.containsKey('timestamp')) {
+      data['timestamp'] = data['date'] ?? data['start_date'] ?? task['updated_at'];
+    }
+
+    timeline.add(data);
   }
 
-  /// =========================
-  /// SHOW PROGRESS POPUP
-  /// =========================
-  void showProgressPopup(
-    BuildContext context,
-    Map<String, dynamic> task,
-  ) async {
-    final reports = await fetchReportsTimeline(task);
-    if (!context.mounted) return;
+  // Add 0% entry from start
+  if (firstStart != null) {
+    timeline.insert(0, {
+      'progress_percent': 0,
+      'description': 'No description available',
+      'timestamp': firstStart,
+    });
+  }
 
-    DateTime? startTime =
-        reports.isNotEmpty ? getSafeTime(reports.first) : null;
-    DateTime? endTime = reports.isNotEmpty ? getSafeTime(reports.last) : null;
+  // Force 100% if task completed
+  final has100 = timeline.any((e) {
+    final p = e['progress_percent'];
+    final v = p is num ? p.toInt() : int.tryParse(p.toString()) ?? 0;
+    return v == 100;
+  });
 
-    Duration? totalDuration =
-        (startTime != null && endTime != null)
-            ? endTime.difference(startTime)
-            : null;
+  if (!has100 && task['status'] == 'Completed') {
+    timeline.add({
+      'progress_percent': 100,
+      'description': 'Task completed',
+      'timestamp': task['completed_date'] ?? task['updated_at'],
+    });
+  }
 
-    String avgTime =
-        totalDuration != null
-            ? "${totalDuration.inHours} hr ${totalDuration.inMinutes.remainder(60)} min"
-            : "--";
+  // Sort by time
+  timeline.sort((a, b) => getSafeTime(a).compareTo(getSafeTime(b)));
 
-    debugPrint("🔹 Total Duration: $avgTime");
+  return timeline;
+}
 
-    showDialog(
-      context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              constraints: const BoxConstraints(maxHeight: 450),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    task['title'] ?? 'Untitled',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    task['description'] ?? '',
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 10),
-                  Text("Average Time: $avgTime"),
-                  const Divider(),
-                  Expanded(
-                    child:
-                        reports.isEmpty
-                            ? const Center(
-                              child: Text("No progress updates found"),
-                            )
-                            : ListView.builder(
-                              itemCount: reports.length,
-                              itemBuilder: (context, index) {
-                                final report = reports[index];
-                                final DateTime currentTime = getSafeTime(
-                                  report,
-                                );
+/// =========================
+/// SHOW PROGRESS POPUP
+/// =========================
+void showProgressPopup(BuildContext context, Map<String, dynamic> task) async {
+  final timeline = await buildProgressTimeline(task);
+  if (!context.mounted) return;
 
-                                DateTime? prevTime;
-                                if (index > 0)
-                                  prevTime = getSafeTime(reports[index - 1]);
-                                else if (task['start_date'] is Timestamp)
-                                  prevTime =
-                                      (task['start_date'] as Timestamp)
-                                          .toDate();
+  DateTime? startTime = timeline.isNotEmpty ? getSafeTime(timeline.first) : null;
+  DateTime? endTime = timeline.isNotEmpty ? getSafeTime(timeline.last) : null;
 
-                                String elapsedTime = "0 min";
-                                if (prevTime != null) {
-                                  final diff = currentTime.difference(prevTime);
-                                  final h = diff.inHours;
-                                  final m = diff.inMinutes.remainder(60);
-                                  elapsedTime =
-                                      diff.inMinutes > 0
-                                          ? "${h > 0 ? "$h hr " : ""}$m min"
-                                          : "0 min";
-                                }
+  String avgTime = "--";
+  if (startTime != null && endTime != null) {
+    final diff = endTime.difference(startTime);
+    avgTime = "${diff.inHours} hr ${diff.inMinutes.remainder(60)} min";
+  }
 
-                                final raw = report['progress_percent'];
-                                final progress =
-                                    raw is num
-                                        ? raw.toDouble()
-                                        : double.tryParse(
-                                              raw?.toString() ?? '0',
-                                            ) ??
-                                            0;
+  // String dueDate = task['due_date'] is Timestamp
+  //     ? DateFormat('dd/MM/yyyy hh:mm a').format((task['due_date'] as Timestamp).toDate())
+  //     : "--";
 
-                                final formattedDate = DateFormat(
-                                  'dd/MM/yyyy hh:mm a',
-                                ).format(currentTime);
+  showDialog(
+    context: context,
+    builder: (context) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        constraints: const BoxConstraints(maxHeight: 500),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(task['title'] ?? '',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text("Average Time: $avgTime"),
+            const SizedBox(height: 2),
+           // Text("Due Date: $dueDate"),
+            const Divider(),
+            Expanded(
+              child: ListView.builder(
+                itemCount: timeline.length,
+                itemBuilder: (context, index) {
+                  final item = timeline[index];
+                  final time = getSafeTime(item);
+                  final progress = item['progress_percent'] is num
+                      ? item['progress_percent'].toInt()
+                      : int.tryParse(item['progress_percent'].toString()) ?? 0;
+                  final formattedDate = DateFormat('dd/MM/yyyy hh:mm a').format(time);
 
-                                return Card(
-                                  elevation: 2,
-                                  margin: const EdgeInsets.symmetric(
-                                    vertical: 4,
-                                    horizontal: 6,
-                                  ),
-                                  child: ListTile(
-                                    leading: Icon(
-                                      Icons.timeline,
-                                      color:
-                                          progress >= 100
-                                              ? Colors.green
-                                              : Colors.blueAccent,
-                                    ),
-                                    title: Text(
-                                      "$formattedDate — ${progress.toInt()}% (after $elapsedTime)",
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      report['description'] ??
-                                          'No description available',
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text("Close"),
-                    ),
-                  ),
-                ],
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("$formattedDate - $progress%",
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(item['description'] ?? 'No description available',
+                          style: const TextStyle(color: Colors.black54)),
+                      const SizedBox(height: 14),
+                    ],
+                  );
+                },
               ),
             ),
-          ),
-    );
-  }
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Close"),
+              ),
+            )
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 
   // 🔹 Filter
   void applyFilter() {

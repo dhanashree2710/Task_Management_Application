@@ -63,7 +63,7 @@ class ManageTaskScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => EmployeeTaskReportScreen(
+                          builder: (context) => EmployeeInternScreen(
                           //  currentUserId: currentUserId,
                           //   currentUserRole: currentUserRole, 
                           ),
