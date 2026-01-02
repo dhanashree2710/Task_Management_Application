@@ -183,20 +183,21 @@ class _UserLoginScreenState extends State<UserLoginScreen> {
       final userId = userDoc['user_id'] ?? '';
       final userEmail = userDoc['user_email'] ?? '';
 
-      UserSession().setUser(
-        id: userId,
-        userRole: role,
-        userName: name,
-        userEmail: userEmail,
-      );
+     UserSession().setUser(
+  id: userId,
+  userRole: role,
+  userName: name,
+  userEmail: userEmail,
+);
 
-      showCustomAlert(
-        context,
-        isSuccess: true,
-        title: "Login Successful",
-        description: "Welcome back, $name!",
-        nextScreen: getNextScreen(role, userDoc),
-      );
+showCustomAlert(
+  context,
+  isSuccess: true,
+  title: "Login Successful",
+  description: "Welcome back, $name!",
+  nextScreen: getNextScreen(role, userDoc),
+);
+
     } catch (e) {
       showCustomAlert(
         context,
@@ -383,8 +384,7 @@ class _UserLoginScreenState extends State<UserLoginScreen> {
   }
 
   Widget _buildGradientTextField(
-      String hint, IconData icon, TextEditingController controller,
-      {bool isPassword = false}) {
+      String hint, IconData icon, TextEditingController controller) {
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(

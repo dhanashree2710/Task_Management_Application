@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:task_management_application/modules/Notification/presentation/views/notification_history_screen.dart';
 import 'package:task_management_application/utils/common/appbar_drawer.dart';
 import 'package:uuid/uuid.dart';
 
@@ -944,72 +945,91 @@ class _InternDashboardScreenState extends State<InternDashboardScreen>
     );
   }
 
-  Future<List<Map<String, dynamic>>> _fetchUnreadNotifications() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('notifications')
-        .where('user_ref',
-            isEqualTo:
-                FirebaseFirestore.instance.doc('users/${widget.currentUserId}'))
-        .where('is_read', isEqualTo: false)
-        .orderBy('timestamp', descending: true)
-        .get();
+/// Returns a stream of unread notification count for the current user
+Stream<int> _unreadNotificationCount() {
+  final userRef = FirebaseFirestore.instance.doc('users/${widget.currentUserId}');
+  return FirebaseFirestore.instance
+      .collection('notifications')
+      .where('user_ref', isEqualTo: userRef)
+      .where('is_read', isEqualTo: false)
+      .snapshots()
+      .map((snapshot) => snapshot.docs.length);
+}
 
-    return snapshot.docs
-        .map((doc) => {'id': doc['notif_id'], ...doc.data()})
-        .toList();
-  }
+
+ Future<List<Map<String, dynamic>>> _fetchUnreadNotifications() async {
+  final snapshot = await FirebaseFirestore.instance
+      .collection('notifications')
+      .where('user_id', isEqualTo: widget.currentUserId)
+      .where('read', isEqualTo: false)
+      .orderBy('created_at', descending: true)
+      .get();
+
+  return snapshot.docs
+      .map((doc) => {
+            'doc_id': doc.id,
+            ...doc.data(),
+          })
+      .toList();
+}
+
+
+
 
   void _showNotifications() async {
     final notifications = await _fetchUnreadNotifications();
     if (notifications.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("No new notifications")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No new notifications")));
       return;
     }
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Notifications"),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: notifications.length,
-            itemBuilder: (context, index) {
-              final notif = notifications[index];
-              return ListTile(
-                title: Text(notif['title'] ?? ''),
-                subtitle: Text(notif['message'] ?? ''),
-                trailing: Text(
-                  notif['timestamp'] != null
-                      ? (notif['timestamp'] as Timestamp)
-                          .toDate()
-                          .toLocal()
-                          .toString()
-                      : '',
-                  style: const TextStyle(fontSize: 10),
-                ),
-                onTap: () async {
-                  // Mark notification as read
-                  await FirebaseFirestore.instance
-                      .collection('notifications')
-                      .doc(notif['notif_id'])
-                      .update({'is_read': true});
+      builder:
+          (context) => AlertDialog(
+            title: const Text("Notifications"),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: notifications.length,
+                itemBuilder: (context, index) {
+                  final notif = notifications[index];
+                  return ListTile(
+                    title: Text(notif['title'] ?? ''),
+                    subtitle: Text(notif['message'] ?? ''),
+                    trailing: Text(
+                      notif['timestamp'] != null
+                          ? (notif['timestamp'] as Timestamp)
+                              .toDate()
+                              .toLocal()
+                              .toString()
+                          : '',
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                    onTap: () async {
+  await FirebaseFirestore.instance
+      .collection('notifications')
+      .doc(notif['doc_id'])
+      .update({'read': true});
 
-                  Navigator.pop(context);
-                  _refreshData();
+  Navigator.pop(context);
+  _refreshData();
+},
+
+                  );
                 },
-              );
-            },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Close"),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Close"))
-        ],
-      ),
     );
   }
 
@@ -1192,37 +1212,52 @@ class _InternDashboardScreenState extends State<InternDashboardScreen>
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // StreamBuilder<Map<String, int>>(
-                          //   stream: _statusCountsStream(),
-                          //   builder: (context, snap) {
-                          //     // show badge count on notifications icon (sum of counts)
-                          //     final counts = snap.data ?? {'Pending': 0, 'In Progress': 0, 'Completed': 0};
-                          //     final total = counts.values.fold<int>(0, (a, b) => a + b);
-                          //     return Stack(
-                          //       clipBehavior: Clip.none,
-                          //       children: [
-                          //         _iconButton(Icons.notifications, _showNotifications),
-                          //         if (total > 0)
-                          //           Positioned(
-                          //             right: -2,
-                          //             top: -4,
-                          //             child: Container(
-                          //               padding: const EdgeInsets.all(4),
-                          //               decoration: BoxDecoration(
-                          //                   color: Colors.red,
-                          //                   borderRadius: BorderRadius.circular(12)),
-                          //               child: Text(
-                          //                 total.toString(),
-                          //                 style: const TextStyle(
-                          //                     color: Colors.white, fontSize: 10),
-                          //               ),
-                          //             ),
-                          //           ),
-                          //       ],
-                          //     );
-                          //   },
-                          // ),
-                          // const SizedBox(width: 12),
+                        StreamBuilder<int>(
+    stream: _unreadNotificationCount(),
+    builder: (context, snapshot) {
+      final count = snapshot.data ?? 0;
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.notifications),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => NotificationHistoryScreen(
+                    currentUserId: widget.currentUserId, 
+                    currentUserRole: widget.currentUserRole,
+                  ),
+                ),
+              );
+            },
+          ),
+          if (count > 0)
+            Positioned(
+              right: 6,
+              top: 6,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  count.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    },
+  ),
+
+                           const SizedBox(width: 12),
                           _iconButton(Icons.filter_list, _openFilterDialog),
                           const SizedBox(width: 12),
                           _iconButton(Icons.refresh, () => _refreshData(clearFilters: true)),

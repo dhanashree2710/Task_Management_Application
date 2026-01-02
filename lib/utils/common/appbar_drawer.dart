@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
 import 'package:task_management_application/modules/Admin/presentation/views/super_admin/admin_dashboard.dart';
 import 'package:task_management_application/modules/Admin/presentation/widgets/mange_department_screen.dart';
@@ -21,7 +19,6 @@ import 'package:task_management_application/modules/Task/presentation/views/inte
 import 'package:task_management_application/modules/Task/presentation/views/manage_task.dart';
 import 'package:task_management_application/modules/Task/presentation/views/task_allocation.dart';
 import 'package:task_management_application/utils/common/user_session.dart';
-import 'package:universal_platform/universal_platform.dart';
 import '../components/kdrt_colors.dart';
 
 class CommonScaffold extends StatelessWidget {
@@ -119,12 +116,7 @@ class CommonScaffold extends StatelessWidget {
     // === Admin Role ===
     if (role == "admin") {
       menuItems.addAll([
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.person_add,
-        //   label: "Register User",
-        //   page: UserRoleRegistration(currentUserRole: role),
-        // ),
+       
         _drawerItem(
           context,
           icon: Icons.assignment,
@@ -190,29 +182,12 @@ class CommonScaffold extends StatelessWidget {
           ),
         ),
 
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.person_add_alt,
-        //   label: "Manage Visitors",
-        //   page: const VisitorDashboardPage(),
-        // ),
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.report_problem,
-        //   label: "Manage Grievances",
-        //   page: const ManageGrievanceScreen(),
-        // ),
       ]);
     }
     // === Super Admin Role ===
     else if (role == "super admin") {
       menuItems.addAll([
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.person_add,
-        //   label: "Register User",
-        //   page:UserRoleRegistration(currentUserRole: role),
-        // ),
+        
         _drawerItem(
           context,
           icon: Icons.assignment,
@@ -268,18 +243,6 @@ class CommonScaffold extends StatelessWidget {
           ),
         ),
 
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.people_alt,
-        //   label: "Manage Employees",
-        //   page: const ManageEmployeeScreen(),
-        // ),
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.report_problem_outlined,
-        //   label: "Manage Grievances",
-        //   page: const ManageGrievanceScreen(),
-        // ),
       ]);
     }
     // === Employee Role ===
@@ -348,50 +311,7 @@ class CommonScaffold extends StatelessWidget {
           
           ),
         ),
-        //   _drawerItem(
-        //   context,
-        //   icon: Icons.assignment,
-        //   label: "Task List",
-        //   onTap: () async {
-        //     final user = FirebaseAuth.instance.currentUser;
-        //     if (user == null) {
-        //       ScaffoldMessenger.of(context).showSnackBar(
-        //         const SnackBar(content: Text("User not logged in")),
-        //       );
-        //       return;
-        //     }
-
-        //     debugPrint("✅ Navigating to Employee Task List for UID: ${user.uid}");
-
-        //     Navigator.pop(context); // Close drawer
-        //     Navigator.push(
-        //       context,
-        //       MaterialPageRoute(
-        //         builder: (context) => ParticluarEmployeeTaskListScreen(
-        //           currentUserId: user.uid,
-        //           currentUserRole: role,
-        //         ),
-        //       ),
-        //     );
-        //   },
-        // ),
-
-        //   _drawerItem(
-        //   context,
-        //   icon: Icons.assignment,
-        //   label: "Manage Attendance",
-        //   page: ManageAttendanceScreen(
-        //     currentUserId: UserSession().userId ?? '',
-        //     currentUserRole: role,
-        //   ),
-        // ),
-
-        // _drawerItem(
-        //   context,
-        //   icon: Icons.report_problem,
-        //   label: "Manage Grievances",
-        //   page: const ManageGrievanceScreen(),
-        // ),
+        
       ]);
     }
     // === Intern Role ===
@@ -493,87 +413,82 @@ class CommonScaffold extends StatelessWidget {
   }
 
   /// === Logout confirmation dialog ===
-  void _showLogoutConfirmation(BuildContext context) async {
-    await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (_) => Dialog(
-            backgroundColor: KDRTColors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+ void _showLogoutConfirmation(BuildContext context) async {
+  await showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => Dialog(
+      backgroundColor: KDRTColors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Container(
+        width: 300,
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Lottie.asset(
+              'assets/confirmation.json',
+              height: 120,
+              width: 120,
             ),
-            child: Container(
-              width: 300,
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Lottie.asset(
-                    'assets/confirmation.json',
-                    height: 120,
-                    width: 120,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Are you sure you want to logout?',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () async {
-                          try {
-                            await FirebaseAuth.instance.signOut();
-
-                            // Navigate to role selection screen
-                            Navigator.pop(context);
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => UserLoginScreen(),
-                              ),
-                              (route) => false,
-                            );
-
-                            // Close app if required
-                            if (UniversalPlatform.isDesktop) {
-                              exit(0);
-                            } else if (UniversalPlatform.isMobile) {
-                              SystemNavigator.pop();
-                            }
-                          } catch (e) {
-                            debugPrint('Logout error: $e');
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          backgroundColor: KDRTColors.darkBlue,
-                        ),
-                        child: const Text('Yes'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: ElevatedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          backgroundColor: KDRTColors.cyan,
-                        ),
-                        child: const Text('No'),
-                      ),
-                    ],
-                  ),
-                ],
+            const SizedBox(height: 16),
+            const Text(
+              'Are you sure you want to logout?',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
+              textAlign: TextAlign.center,
             ),
-          ),
-    );
-  }
+            const SizedBox(height: 24),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      // 1️⃣ Firebase logout (safe even if not used)
+                      await FirebaseAuth.instance.signOut();
+
+                      // 2️⃣ CLEAR LOCAL SESSION (MOST IMPORTANT)
+                      UserSession().clear();
+
+                      // 3️⃣ Navigate to Login (NO APP CLOSE)
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const UserLoginScreen(),
+                        ),
+                        (_) => false,
+                      );
+                    } catch (e) {
+                      debugPrint("Logout error: $e");
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: KDRTColors.darkBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Yes'),
+                ),
+
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: KDRTColors.cyan,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('No'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 }
