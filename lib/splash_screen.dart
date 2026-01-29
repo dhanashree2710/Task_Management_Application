@@ -77,8 +77,10 @@ import 'package:flutter/material.dart';
 import 'package:task_management_application/modules/Admin/presentation/views/super_admin/admin_dashboard.dart';
 import 'package:task_management_application/modules/Employee/presentation/views/employee_dashboard.dart';
 import 'package:task_management_application/modules/Interns/presentation/views/intern_dashboard.dart';
-import 'package:task_management_application/modules/Login/data/models/user_session.dart';
+
 import 'package:task_management_application/modules/Login/presentation/views/user_role_login.dart';
+import 'package:task_management_application/modules/Login/presentation/widgets/biometric_auth.dart';
+import 'package:task_management_application/utils/common/user_session.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -109,21 +111,36 @@ void initState() {
 }
 
 
- Future<void> _checkSession() async {
+Future<void> _checkSession() async {
   await Future.delayed(const Duration(seconds: 2));
 
   final session = UserSession();
   final loggedIn = await session.isLoggedIn();
-  final role = await session.role;
-  final uid = await session.userId;
+  final role = session.role ?? '';
+  final uid = session.userId ?? '';
 
   debugPrint("🔍 SPLASH CHECK → loggedIn=$loggedIn role=$role uid=$uid");
 
+  // 🔴 If not logged in → go to login
   if (!loggedIn || role.isEmpty) {
     _go(const UserLoginScreen());
     return;
   }
 
+  // 🔐 STEP 1: Check if biometric is enabled
+  final biometricEnabled = await session.isBiometricEnabled();
+
+  if (biometricEnabled) {
+    final success = await BiometricAuth.authenticate();
+
+    // ❌ Fingerprint failed
+    if (!success) {
+      _go(const UserLoginScreen());
+      return;
+    }
+  }
+
+  // ✅ STEP 2: Navigate based on role
   switch (role.toLowerCase()) {
     case 'admin':
     case 'super admin':
@@ -131,23 +148,28 @@ void initState() {
       break;
 
     case 'employee':
-      _go(EmployeeDashboardScreen(
-        currentUserId: uid,
-        currentUserRole: role,
-      ));
+      _go(
+        EmployeeDashboardScreen(
+          currentUserId: uid,
+          currentUserRole: role,
+        ),
+      );
       break;
 
     case 'intern':
-      _go(InternDashboardScreen(
-        currentUserId: uid,
-        currentUserRole: role,
-      ));
+      _go(
+        InternDashboardScreen(
+          currentUserId: uid,
+          currentUserRole: role,
+        ),
+      );
       break;
 
     default:
       _go(const UserLoginScreen());
   }
 }
+
 
 
   void _go(Widget page) {

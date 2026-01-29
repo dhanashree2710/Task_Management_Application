@@ -184,163 +184,190 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     }
   }
 
-/// =========================
-/// SAFE TIMESTAMP GETTER
-/// =========================
-DateTime getSafeTime(Map<String, dynamic> data) {
-  final keys = [
-    'timestamp',     // forced entries
-    'date',          // report date
-    'start_date',    
-    'completed_date',
-    'updated_at',
-  ];
+  /// =========================
+  /// SAFE TIMESTAMP GETTER
+  /// =========================
+  DateTime getSafeTime(Map<String, dynamic> data) {
+    final keys = [
+      'timestamp', // forced entries
+      'date', // report date
+      'start_date',
+      'completed_date',
+      'updated_at',
+    ];
 
-  for (final key in keys) {
-    final value = data[key];
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
-  }
-
-  // fallback so UI never crashes
-  return DateTime.fromMillisecondsSinceEpoch(0);
-}
-
-/// =========================
-/// BUILD FULL TIMELINE
-/// =========================
-Future<List<Map<String, dynamic>>> buildProgressTimeline(Map<String, dynamic> task) async {
-  final List<Map<String, dynamic>> timeline = [];
-  final taskId = task['task_id'];
-
-  // Fetch reports
-  final snapshot = await FirebaseFirestore.instance
-      .collection('reports')
-      .where('task_id', isEqualTo: taskId)
-      .get();
-
-  Timestamp? firstStart;
-
-  for (final doc in snapshot.docs) {
-    final data = doc.data();
-    if (firstStart == null && data['start_date'] is Timestamp) {
-      firstStart = data['start_date'];
+    for (final key in keys) {
+      final value = data[key];
+      if (value is Timestamp) return value.toDate();
+      if (value is DateTime) return value;
     }
 
-    // ensure timestamp exists for sorting
-    if (!data.containsKey('timestamp')) {
-      data['timestamp'] = data['date'] ?? data['start_date'] ?? task['updated_at'];
+    // fallback so UI never crashes
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  /// =========================
+  /// BUILD FULL TIMELINE
+  /// =========================
+  Future<List<Map<String, dynamic>>> buildProgressTimeline(
+    Map<String, dynamic> task,
+  ) async {
+    final List<Map<String, dynamic>> timeline = [];
+    final taskId = task['task_id'];
+
+    // Fetch reports
+    final snapshot =
+        await FirebaseFirestore.instance
+            .collection('reports')
+            .where('task_id', isEqualTo: taskId)
+            .get();
+
+    Timestamp? firstStart;
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      if (firstStart == null && data['start_date'] is Timestamp) {
+        firstStart = data['start_date'];
+      }
+
+      // ensure timestamp exists for sorting
+      if (!data.containsKey('timestamp')) {
+        data['timestamp'] =
+            data['date'] ?? data['start_date'] ?? task['updated_at'];
+      }
+
+      timeline.add(data);
     }
 
-    timeline.add(data);
-  }
+    // Add 0% entry from start
+    if (firstStart != null) {
+      timeline.insert(0, {
+        'progress_percent': 0,
+        'description': 'No description available',
+        'timestamp': firstStart,
+      });
+    }
 
-  // Add 0% entry from start
-  if (firstStart != null) {
-    timeline.insert(0, {
-      'progress_percent': 0,
-      'description': 'No description available',
-      'timestamp': firstStart,
+    // Force 100% if task completed
+    final has100 = timeline.any((e) {
+      final p = e['progress_percent'];
+      final v = p is num ? p.toInt() : int.tryParse(p.toString()) ?? 0;
+      return v == 100;
     });
+
+    if (!has100 && task['status'] == 'Completed') {
+      timeline.add({
+        'progress_percent': 100,
+        'description': 'Task completed',
+        'timestamp': task['completed_date'] ?? task['updated_at'],
+      });
+    }
+
+    // Sort by time
+    timeline.sort((a, b) => getSafeTime(a).compareTo(getSafeTime(b)));
+
+    return timeline;
   }
 
-  // Force 100% if task completed
-  final has100 = timeline.any((e) {
-    final p = e['progress_percent'];
-    final v = p is num ? p.toInt() : int.tryParse(p.toString()) ?? 0;
-    return v == 100;
-  });
+  /// =========================
+  /// SHOW PROGRESS POPUP
+  /// =========================
+  void showProgressPopup(
+    BuildContext context,
+    Map<String, dynamic> task,
+  ) async {
+    final timeline = await buildProgressTimeline(task);
+    if (!context.mounted) return;
 
-  if (!has100 && task['status'] == 'Completed') {
-    timeline.add({
-      'progress_percent': 100,
-      'description': 'Task completed',
-      'timestamp': task['completed_date'] ?? task['updated_at'],
-    });
-  }
+    DateTime? startTime =
+        timeline.isNotEmpty ? getSafeTime(timeline.first) : null;
+    DateTime? endTime = timeline.isNotEmpty ? getSafeTime(timeline.last) : null;
 
-  // Sort by time
-  timeline.sort((a, b) => getSafeTime(a).compareTo(getSafeTime(b)));
+    String avgTime = "--";
+    if (startTime != null && endTime != null) {
+      final diff = endTime.difference(startTime);
+      avgTime = "${diff.inHours} hr ${diff.inMinutes.remainder(60)} min";
+    }
 
-  return timeline;
-}
+    // String dueDate = task['due_date'] is Timestamp
+    //     ? DateFormat('dd/MM/yyyy hh:mm a').format((task['due_date'] as Timestamp).toDate())
+    //     : "--";
 
-/// =========================
-/// SHOW PROGRESS POPUP
-/// =========================
-void showProgressPopup(BuildContext context, Map<String, dynamic> task) async {
-  final timeline = await buildProgressTimeline(task);
-  if (!context.mounted) return;
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              constraints: const BoxConstraints(maxHeight: 500),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task['title'] ?? '',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text("Average Time: $avgTime"),
+                  const SizedBox(height: 2),
+                  // Text("Due Date: $dueDate"),
+                  const Divider(),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: timeline.length,
+                      itemBuilder: (context, index) {
+                        final item = timeline[index];
+                        final time = getSafeTime(item);
+                        final progress =
+                            item['progress_percent'] is num
+                                ? item['progress_percent'].toInt()
+                                : int.tryParse(
+                                      item['progress_percent'].toString(),
+                                    ) ??
+                                    0;
+                        final formattedDate = DateFormat(
+                          'dd/MM/yyyy hh:mm a',
+                        ).format(time);
 
-  DateTime? startTime = timeline.isNotEmpty ? getSafeTime(timeline.first) : null;
-  DateTime? endTime = timeline.isNotEmpty ? getSafeTime(timeline.last) : null;
-
-  String avgTime = "--";
-  if (startTime != null && endTime != null) {
-    final diff = endTime.difference(startTime);
-    avgTime = "${diff.inHours} hr ${diff.inMinutes.remainder(60)} min";
-  }
-
-  // String dueDate = task['due_date'] is Timestamp
-  //     ? DateFormat('dd/MM/yyyy hh:mm a').format((task['due_date'] as Timestamp).toDate())
-  //     : "--";
-
-  showDialog(
-    context: context,
-    builder: (context) => Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        constraints: const BoxConstraints(maxHeight: 500),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(task['title'] ?? '',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            Text("Average Time: $avgTime"),
-            const SizedBox(height: 2),
-           // Text("Due Date: $dueDate"),
-            const Divider(),
-            Expanded(
-              child: ListView.builder(
-                itemCount: timeline.length,
-                itemBuilder: (context, index) {
-                  final item = timeline[index];
-                  final time = getSafeTime(item);
-                  final progress = item['progress_percent'] is num
-                      ? item['progress_percent'].toInt()
-                      : int.tryParse(item['progress_percent'].toString()) ?? 0;
-                  final formattedDate = DateFormat('dd/MM/yyyy hh:mm a').format(time);
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("$formattedDate - $progress%",
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 2),
-                      Text(item['description'] ?? 'No description available',
-                          style: const TextStyle(color: Colors.black54)),
-                      const SizedBox(height: 14),
-                    ],
-                  );
-                },
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "$formattedDate - $progress%",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              item['description'] ?? 'No description available',
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text("Close"),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Close"),
-              ),
-            )
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
+          ),
+    );
+  }
 
   void applyFilter() {
     _filteredTasks =
@@ -452,6 +479,8 @@ void showProgressPopup(BuildContext context, Map<String, dynamic> task) async {
                 fontWeight: FontWeight.bold,
               ),
               columns: const [
+                DataColumn(label: Text("Sr.no")),
+                DataColumn(label: Text("Task ID")),
                 DataColumn(label: Text("Title")),
                 DataColumn(label: Text("Description")),
                 DataColumn(label: Text("Assigned By")),
@@ -467,12 +496,19 @@ void showProgressPopup(BuildContext context, Map<String, dynamic> task) async {
                 DataColumn(label: Text("Actions")),
               ],
               rows:
-                  _filteredTasks.map((task) {
+                  _filteredTasks.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final task = entry.value;
                     final id = task['task_id'];
                     final isEditing = _editingTaskId == id;
 
                     return DataRow(
                       cells: [
+                        // Sr.no
+                        DataCell(Text("${index + 1}")),
+
+                        // Task ID
+                        DataCell(Text(task['task_id'] ?? '')),
                         DataCell(
                           isEditing
                               ? TextField(controller: _titleCtrls[id])

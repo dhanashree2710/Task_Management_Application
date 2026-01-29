@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:task_management_application/modules/Admin/presentation/views/super_admin/admin_dashboard.dart';
 import 'package:task_management_application/modules/Employee/presentation/views/employee_dashboard.dart';
 import 'package:task_management_application/modules/Interns/presentation/views/intern_dashboard.dart';
+import 'package:task_management_application/modules/Login/presentation/widgets/biometric_auth.dart';
 import 'package:task_management_application/utils/common/appbar_drawer.dart';
 import 'package:task_management_application/utils/common/pop_up_screen.dart';
 import 'package:task_management_application/utils/common/user_session.dart';
@@ -190,6 +191,8 @@ class _UserLoginScreenState extends State<UserLoginScreen> {
   userEmail: userEmail,
 );
 
+await UserSession().enableBiometric(true);
+
 showCustomAlert(
   context,
   isSuccess: true,
@@ -327,6 +330,68 @@ showCustomAlert(
                             ),
                           ),
                         ),
+                         const SizedBox(height: 30),
+                      IconButton(
+  icon: const Icon(Icons.fingerprint, size: 40),
+  onPressed: () async {
+    final session = UserSession();
+
+    // 🔴 LOAD SAVED DATA
+    await session.loadSession();
+
+    final loggedIn = await session.isLoggedIn();
+    final role = session.role;
+    final uid = session.userId;
+
+    debugPrint("🔐 BIO LOGIN → loggedIn=$loggedIn role=$role uid=$uid");
+
+    if (!loggedIn || role == null || uid == null) {
+      showCustomAlert(
+        context,
+        isSuccess: false,
+        title: "Login Required",
+        description: "Please login once using email & password",
+      );
+      return;
+    }
+
+    final success = await BiometricAuth.authenticate();
+    if (!success) return;
+
+    Widget nextScreen;
+
+    switch (role.toLowerCase()) {
+      case 'admin':
+      case 'super admin':
+        nextScreen = const AdminDashboard();
+        break;
+
+      case 'employee':
+        nextScreen = EmployeeDashboardScreen(
+          currentUserId: uid,
+          currentUserRole: role,
+        );
+        break;
+
+      case 'intern':
+        nextScreen = InternDashboardScreen(
+          currentUserId: uid,
+          currentUserRole: role,
+        );
+        break;
+
+      default:
+        nextScreen = const UserLoginScreen();
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => nextScreen),
+    );
+  },
+),
+
+
                 ],
               ),
             ),

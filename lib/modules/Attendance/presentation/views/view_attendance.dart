@@ -71,6 +71,7 @@ class _AttendanceDashboardAllScreenState
     setState(() => isLoading = true);
 
     await fetchEmployees();
+    await fetchLeaves(); 
     await fetchHolidays();
    
 
@@ -323,6 +324,42 @@ Future<void> fetchHolidays() async {
 }
 
 
+Future<void> fetchLeaves() async {
+  for (final emp in employees) {
+    final empId = emp['id'];
+
+    final snapshot = await _firestore
+        .collection('leave_applications')
+        .doc(empId)
+        .collection('applications')
+        .where('status', isEqualTo: 'Approved')
+        .get();
+
+    attendanceTable.putIfAbsent(empId, () => {});
+
+    for (final doc in snapshot.docs) {
+      final from = DateTime.parse(doc['from_date']);
+      final to = DateTime.parse(doc['to_date']);
+
+      for (DateTime d = from;
+          !d.isAfter(to);
+          d = d.add(const Duration(days: 1))) {
+
+        final dateStr = DateFormat('yyyy-MM-dd').format(d);
+
+        // ⚠️ DO NOT override Present / Absent
+        attendanceTable[empId]!.putIfAbsent(dateStr, () => 'L');
+      }
+    }
+  }
+
+
+  debugPrint("🟠 Leaves merged into attendanceTable");
+setState(() {});
+
+}
+
+
 // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
@@ -342,9 +379,15 @@ for (var emp in employees) {
     final dateStr =
         "$selectedYear-${selectedMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
 
-    final value = holidayMap.containsKey(dateStr)
-        ? "H"
-        : data[dateStr] ?? "-";
+    String value;
+
+if (data.containsKey(dateStr)) {
+  value = data[dateStr]!;
+} else if (holidayMap.containsKey(dateStr)) {
+  value = "H";
+} else {
+  value = "-";
+}
 
     switch (value) {
       case "P":

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:task_management_application/modules/Report/presentation/views/employee_progress.dart';
 import 'package:task_management_application/modules/Report/presentation/views/task_report.dart';
 import 'package:task_management_application/modules/Task/presentation/views/employee_task_list.dart';
 import 'package:task_management_application/utils/common/appbar_drawer.dart';
@@ -22,7 +23,8 @@ class ManageTaskScreen extends StatelessWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           bool isMobile = constraints.maxWidth < 600;
-          bool isTablet = constraints.maxWidth >= 600 && constraints.maxWidth < 1024;
+          bool isTablet =
+              constraints.maxWidth >= 600 && constraints.maxWidth < 1024;
 
           return Center(
             child: SingleChildScrollView(
@@ -32,9 +34,8 @@ class ManageTaskScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // ---------------- Employee Task List ----------------
                   CustomButton(
-                    label: "Task List",
+                    label: "Edit Task List",
                     icon: Icons.badge,
                     width: isMobile ? double.infinity : (isTablet ? 220 : 250),
                     height: 70,
@@ -42,10 +43,11 @@ class ManageTaskScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => EmployeeTaskListScreen(
-                            currentUserId: currentUserId,
-                            currentUserRole: currentUserRole,
-                          ),
+                          builder:
+                              (context) => EmployeeTaskListScreen(
+                                currentUserId: currentUserId,
+                                currentUserRole: currentUserRole,
+                              ),
                         ),
                       );
                     },
@@ -53,7 +55,6 @@ class ManageTaskScreen extends StatelessWidget {
 
                   SizedBox(height: isMobile ? 16 : 0, width: isMobile ? 0 : 16),
 
-                  // ---------------- Intern Task List ----------------
                   CustomButton(
                     label: "Task Report",
                     icon: Icons.school,
@@ -63,10 +64,28 @@ class ManageTaskScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => EmployeeInternScreen(
-                          //  currentUserId: currentUserId,
-                          //   currentUserRole: currentUserRole, 
-                          ),
+                          builder:
+                              (context) => EmployeeInternScreen(
+                                //  currentUserId: currentUserId,
+                                //   currentUserRole: currentUserRole,
+                              ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  SizedBox(height: isMobile ? 16 : 0, width: isMobile ? 0 : 16),
+
+                  CustomButton(
+                    label: "Progress Report",
+                    icon: Icons.school,
+                    width: isMobile ? double.infinity : (isTablet ? 220 : 250),
+                    height: 70,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EmployeePerformanceDashboard(),
                         ),
                       );
                     },
